@@ -1,0 +1,16 @@
+# dépendances
+node_modules/
+
+# build
+dist/
+*.local
+
+# installateur généré
+installer/app.html
+installer/*.exe
+
+# logs / divers
+npm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/

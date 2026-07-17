@@ -1,0 +1,27 @@
+{
+  "name": "la-vigie",
+  "private": true,
+  "version": "1.0.0",
+  "description": "La Vigie — logiciel de pilotage financier (compte de résultat, santé, taux de remplissage) calibré pour l'hôtel-restaurant Le Noirmoutier.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "jspdf": "2.5.1",
+    "jspdf-autotable": "3.8.2",
+    "lucide-react": "1.24.0",
+    "pdfjs-dist": "3.11.174",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "recharts": "3.9.2",
+    "xlsx-js-style": "1.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.7.0",
+    "vite": "5.4.21",
+    "vite-plugin-singlefile": "2.3.3"
+  }
+}
