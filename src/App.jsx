@@ -139,6 +139,12 @@ function styleRow(ws,r,ncols,base,money){
     ws[a].s=st;
   }
 }
+// stylise uniquement la 1re cellule (titre/sous-titre) — pas de fusion, le texte déborde sur les colonnes vides
+function styleCell(ws,r,base){
+  const a=XLSX.utils.encode_cell({r,c:0});
+  if(!ws[a])ws[a]={t:"s",v:""};
+  ws[a].s=JSON.parse(JSON.stringify(base));
+}
 
 
 function toNum(v){
@@ -610,9 +616,9 @@ export default function App(){
     });
     const ws=XLSX.utils.aoa_to_sheet(D.map(d=>d.cells));
     ws["!cols"]=[{wch:34},...cols.map(()=>({wch:13})),{wch:14}];
-    ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:ncols-1}},{s:{r:1,c:0},e:{r:1,c:ncols-1}}];
     ws["!rows"]=D.map(d=>({hpt:d.t==="title"?26:d.t==="sub"?16:d.t==="head"?18:d.t==="res"?22:15}));
-    D.forEach((d,i)=>styleRow(ws,i,ncols,XSTY[d.t],d.t==="row"||d.t==="tot"||d.t==="res"));
+    D.forEach((d,i)=>{ if(d.t==="title"||d.t==="sub")styleCell(ws,i,XSTY[d.t]);
+      else styleRow(ws,i,ncols,XSTY[d.t],d.t==="row"||d.t==="tot"||d.t==="res"); });
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Suivi "+exYear);
     XLSX.writeFile(wb,`La-Vigie_Suivi_${exYear}.xlsx`);
   };
@@ -669,9 +675,9 @@ export default function App(){
     const wcount=head.length;
     const ws=XLSX.utils.aoa_to_sheet(D.map(d=>d.cells));
     ws["!cols"]=[{wch:34},...cols.map(()=>({wch:13})),...(hasD?[{wch:16}]:[])];
-    ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:wcount-1}},{s:{r:1,c:0},e:{r:1,c:wcount-1}}];
     ws["!rows"]=D.map(d=>({hpt:d.t==="title"?26:d.t==="sub"?16:d.t==="head"?18:d.t==="res"?22:15}));
-    D.forEach((d,i)=>styleRow(ws,i,wcount,XSTY[d.t],d.t==="row"||d.t==="tot"||d.t==="res"));
+    D.forEach((d,i)=>{ if(d.t==="title"||d.t==="sub")styleCell(ws,i,XSTY[d.t]);
+      else styleRow(ws,i,wcount,XSTY[d.t],d.t==="row"||d.t==="tot"||d.t==="res"); });
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Comparatif "+MOIS[cmpMonth].slice(0,3));
     XLSX.writeFile(wb,`La-Vigie_Comparatif_${MOIS[cmpMonth]}.xlsx`);
   };
@@ -729,10 +735,10 @@ export default function App(){
       {l:"RÉSULTAT NET",v:r2(RN),t:"res"},
     ];
     const ws=XLSX.utils.aoa_to_sheet(D.map(d=>[d.l,d.v!==undefined?d.v:""]));
-    ws["!cols"]=[{wch:44},{wch:18}];
-    ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:1}},{s:{r:1,c:0},e:{r:1,c:1}}];
+    ws["!cols"]=[{wch:40},{wch:16}];
     ws["!rows"]=D.map(d=>({hpt:d.t==="title"?26:d.t==="sub"?16:d.t==="sec"||d.t==="head"?18:d.t==="res"?22:15}));
-    D.forEach((d,i)=>styleRow(ws,i,2,XSTY[d.t],d.t==="row"||d.t==="tot"||d.t==="res"));
+    D.forEach((d,i)=>{ if(d.t==="title"||d.t==="sub")styleCell(ws,i,XSTY[d.t]);
+      else styleRow(ws,i,2,XSTY[d.t],d.t==="row"||d.t==="tot"||d.t==="res"); });
     const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Bilan "+MOIS[mois].slice(0,3));
     XLSX.writeFile(wb,`La-Vigie_Bilan_${MOIS[mois]}_${annee}.xlsx`);
   };
