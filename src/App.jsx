@@ -748,6 +748,10 @@ export default function App(){
     const doc=new jsPDF({unit:"mm",format:"a4"});
     const INK=[43,43,43],SAGE=[139,150,131],TAUPE=[181,161,142],PAPER=[248,246,242],SOFT=[233,237,229],TSOFT=[239,233,225];
     const W=210, M=15;
+    // formatage PDF : la police standard ne rend pas l'espace fine insécable (affichée « / ») → espace normale
+    const sp=s=>String(s).replace(/\u202F|\u00A0/g," ");
+    const eP=n=>sp(Math.round(isFinite(n)?n:0).toLocaleString("fr-FR"))+" €";
+    const pP=n=>sp((isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:1}))+" %";
     // en-tête
     try{doc.addImage(LOGO_DARK,"PNG",M,11,15,15);}catch(e){}
     doc.setTextColor(...INK);doc.setFont("helvetica","bold");doc.setFontSize(19);
@@ -758,7 +762,7 @@ export default function App(){
 
     // bandeau indicateurs
     const Hm=healthFrom(liveVals);
-    const boxes=[["CA HT",eur(CA)],["EBE",eur(EBE)],["Résultat net",eur(RN)],["Santé",Hm.score+" / 100"]];
+    const boxes=[["CA HT",eP(CA)],["EBE",eP(EBE)],["Résultat net",eP(RN)],["Santé",Hm.score+" / 100"]];
     const bw=(W-2*M-3*4)/4;
     boxes.forEach((b,i)=>{
       const x=M+i*(bw+4);
@@ -789,18 +793,19 @@ export default function App(){
       ["Résultat d'exploitation",RES_EXPL,T],
       ["Résultat financier",RES_FIN],["Résultat exceptionnel",RES_EXC],
       ["Résultat avant impôt",RAI,T],
-      [`Impôt sur les sociétés (${tauxIS} %)`,-IS],
+      [`Impôt sur les sociétés (${tauxIS} %)`,IS>0?-IS:0],
       ["RÉSULTAT NET",RN,X],
     ];
     doc.autoTable({
       startY:58,margin:{left:M,right:M},
       head:[["Poste","Montant HT"]],
-      body:pl.map(r=>[r[0],r[2]===S?"":eur(r[1])]),
+      body:pl.map(r=>[r[0],r[2]===S?"":eP(r[1])]),
       theme:"plain",
       styles:{fontSize:9,cellPadding:1.5,textColor:INK,lineColor:[235,230,220],lineWidth:0.1},
       headStyles:{fillColor:INK,textColor:PAPER,fontStyle:"bold",halign:"left"},
       columnStyles:{1:{halign:"right"}},
       didParseCell:(d)=>{
+        if(d.section==="head"&&d.column.index===1){d.cell.styles.halign="right";return;}
         if(d.section!=="body")return;
         const t=pl[d.row.index][2];
         if(t===S){d.cell.styles.fillColor=SAGE;d.cell.styles.textColor=[255,255,255];d.cell.styles.fontStyle="bold";d.cell.styles.fontSize=8;}
@@ -811,7 +816,7 @@ export default function App(){
 
     // ratios
     const etat={good:"Sain",warn:"À surveiller",bad:"Alerte"};
-    const rows=Hm.ratios.map(r=>[r.t,pct(r.v),etat[r.s]]);
+    const rows=Hm.ratios.map(r=>[r.t,pP(r.v),etat[r.s]]);
     doc.autoTable({
       startY:doc.lastAutoTable.finalY+7,margin:{left:M,right:M},
       head:[["Ratio de gestion","Valeur","État"]],
@@ -819,8 +824,9 @@ export default function App(){
       theme:"plain",
       styles:{fontSize:9,cellPadding:1.6,textColor:INK},
       headStyles:{fillColor:TAUPE,textColor:[255,255,255],fontStyle:"bold"},
-      columnStyles:{1:{halign:"right"},2:{halign:"right"}},
+      columnStyles:{0:{cellWidth:95},1:{halign:"right",cellWidth:40},2:{halign:"left"}},
       didParseCell:(d)=>{
+        if(d.section==="head"&&d.column.index===1){d.cell.styles.halign="right";}
         if(d.section==="body"&&d.column.index===2){
           const s=Hm.ratios[d.row.index].s;
           d.cell.styles.textColor=s==="good"?[15,138,78]:s==="bad"?[168,90,72]:[173,132,63];
