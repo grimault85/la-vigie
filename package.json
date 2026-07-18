@@ -2,14 +2,63 @@
   "name": "la-vigie",
   "private": true,
   "version": "1.0.0",
-  "description": "La Vigie — logiciel de pilotage financier (compte de résultat, santé, taux de remplissage) calibré pour l'hôtel-restaurant Le Noirmoutier.",
+  "description": "La Vigie — logiciel de pilotage financier (compte de résultat, santé, taux de remplissage) pour l'hôtel-restaurant Le Noirmoutier. Application de bureau Mac & Windows.",
+  "author": "La Vigie",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "electron": "electron .",
+    "start": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
-  "dependencies": {
+  "build": {
+    "appId": "com.lavigie.pilotage",
+    "productName": "La Vigie",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "La Vigie"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office",
+      "icon": "build/icon.png"
+    }
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "4.7.0",
+    "electron": "^31.7.7",
+    "electron-builder": "^25.1.8",
     "jspdf": "2.5.1",
     "jspdf-autotable": "3.8.2",
     "lucide-react": "1.24.0",
@@ -17,11 +66,8 @@
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "recharts": "3.9.2",
-    "xlsx-js-style": "1.2.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "4.7.0",
     "vite": "5.4.21",
-    "vite-plugin-singlefile": "2.3.3"
+    "vite-plugin-singlefile": "2.3.3",
+    "xlsx-js-style": "1.2.0"
   }
 }
