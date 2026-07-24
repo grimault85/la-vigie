@@ -268,16 +268,16 @@ function jaliaCategory(parent){
   const has=(...k)=>k.some(x=>p.includes(x));
   if(has("hébergement","hebergement","chambre","nuit","hôtel","hotel")) return "hotel";
   if(has("petit dej","petit-déj","petit déj","breakfast","pdj")) return "petitdej";
-  if(has("séminaire","seminaire","banquet","privatis","traiteur","événement","evenement","réception","reception","groupe")) return "event";
-  if(has("alcool","bière","biere","vin","cocktail","soft","boisson","apéritif","aperitif","digestif","champagne","spiritueux","café","cafe","thé")) return "bar";
-  if(has("plat","dessert","entrée","entree","fromage","menu","garniture","poisson","viande")) return "resto";
-  return "resto"; // défaut
+  if(has("séminaire","seminaire","banquet","privatis","privatisation","traiteur","événement","evenement","événementiel","evenementiel","réception","reception","groupe","mariage","salle","location de salle","cocktail dinatoire","cocktail dînatoire")) return "event";
+  if(has("alcool","bière","biere","vin","cocktail","soft","boisson","apéritif","aperitif","digestif","champagne","spiritueux","café","cafe","thé","jus","smoothie","granité","granite","spritz","liqueur","limonade","whisky","rhum")) return "bar";
+  if(has("plat","dessert","entrée","entree","fromage","menu","garniture","poisson","viande","tapas","planche","pizza","burger","salade","formule","brunch","sandwich","frites")) return "resto";
+  return "autres"; // défaut : famille non reconnue → Autres/Divers (jamais noyée dans Restauration)
 }
 function parseJalia(d){
   const iP=guessCol(d.headers,["parent"]);
   const iHT=guessCol(d.headers,["ht"]);
   if(iP<0||iHT<0) return {ok:false,error:"Colonnes 'parent' et 'HT' introuvables dans l'export caisse."};
-  const cats={resto:0,bar:0,hotel:0,petitdej:0,event:0};
+  const cats={resto:0,bar:0,hotel:0,petitdej:0,event:0,autres:0};
   const fam={};
   d.rows.forEach(r=>{
     const parent=r[iP]; if(parent==null||String(parent).trim()==="")return;
@@ -291,19 +291,68 @@ function parseJalia(d){
   return {ok:true,cats,total,families:Object.entries(fam).map(([parent,v])=>({parent,ht:Math.round(v.ht*100)/100,cat:v.cat})).sort((a,b)=>b.ht-a.ht)};
 }
 
+/* --- Lecture d'un export de statistiques du logiciel de réservation (une ligne par jour) --- */
+const JSEM = ["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
+function parsePMS(d){
+  const H=d.headers||[];
+  const iDate=guessCol(H,["date"]);
+  const iOcc =guessCol(H,["chambres cccup","chambres occup","tot chambres","occupée","occupee"]);
+  const iInd =guessCol(H,["individuel"]);
+  const iGrp =guessCol(H,["groupe"]);
+  const iTx  =guessCol(H,["taux"]);
+  const iRev =guessCol(H,["revenu séjour","revenu sejour","séjour","sejour"]);
+  const iSup =guessCol(H,["supplément","supplement"]);
+  const iArr =guessCol(H,["arrivée","arrivee"]);
+  const iHS  =guessCol(H,["hors de service","hors service"]);
+  const iPer =guessCol(H,["personne"]);
+  if(iDate<0||iOcc<0)
+    return {ok:false,error:"Colonnes attendues introuvables (date, chambres occupées). Vérifiez qu'il s'agit bien de l'export de statistiques du logiciel de réservation."};
+  const days=[];
+  (d.rows||[]).forEach(r=>{
+    const m=/(\d{2})\/(\d{2})\/(\d{4})/.exec(String(r[iDate]||""));
+    if(!m)return; // ignore les lignes de totaux et de prévisionnel
+    const dd=+m[1],mo=+m[2],yy=+m[3];
+    days.push({jour:dd,mois:mo,annee:yy,label:m[1]+"/"+m[2],
+      jsem:new Date(yy,mo-1,dd).getDay(),
+      occ:toNum(r[iOcc]), tx:iTx<0?0:toNum(r[iTx]),
+      ind:iInd<0?0:toNum(r[iInd]), grp:iGrp<0?0:toNum(r[iGrp]),
+      rev:iRev<0?0:toNum(r[iRev]), sup:iSup<0?0:toNum(r[iSup]),
+      arr:iArr<0?0:toNum(r[iArr]), hs:iHS<0?0:toNum(r[iHS]),
+      pers:iPer<0?0:toNum(r[iPer])});
+  });
+  if(!days.length)return {ok:false,error:"Aucune journée datée trouvée dans ce fichier."};
+  days.sort((a,b)=>(a.annee-b.annee)||(a.mois-b.mois)||(a.jour-b.jour));
+  // Capacité déduite : chambres occupées ÷ taux d'occupation affiché (valeur la plus fréquente)
+  const cand={};
+  days.forEach(x=>{ if(x.tx>0&&x.occ>0){ const c=Math.round(x.occ/(x.tx/100)); if(c>0&&c<1000)cand[c]=(cand[c]||0)+1; } });
+  const ent=Object.entries(cand).sort((a,b)=>b[1]-a[1]);
+  const capDetect=ent.length?+ent[0][0]:0;
+  const capAccord=ent.length?Math.round(ent[0][1]/days.length*100):0;
+  const occMax=days.reduce((m,x)=>Math.max(m,x.occ),0);
+  const mo=days[Math.floor(days.length/2)];
+  const meme=days.every(x=>x.mois===mo.mois&&x.annee===mo.annee);
+  const periode=meme?`${MOIS[mo.mois-1]} ${mo.annee}`
+    :`${days[0].label}/${days[0].annee} → ${days[days.length-1].label}/${days[days.length-1].annee}`;
+  return {ok:true,days,capDetect,capAccord,occMax,periode,mois:mo.mois,annee:mo.annee,
+    hasRev:iRev>=0,hasArr:iArr>=0,hasPers:iPer>=0,hasGrp:iGrp>=0};
+}
+
 /* Regroupement PCG : compte -> poste (ordre = du plus spécifique au plus large) */
-const PRODUITS = new Set(["ca","ca_hotel","ca_petitdej","autres_produits","prod_fin","prod_except"]);
+const PRODUITS = new Set(["ca","ca_hotel","ca_petitdej","ca_evt","autres_produits","prod_fin","prod_except"]);
 function classify(cptRaw){
   const c=String(cptRaw).replace(/\D/g,"");
   if(!c)return null;
   const is=(...p)=>p.some(x=>c.startsWith(x));
   // Produits (classe 7)
   if(is("706111"))return "ca_petitdej";
+  if(is("706122"))return "ca_hotel"; // hébergement facturé via meg → reste en hébergement
+  if(is("70612"))return "ca_evt"; // prestations salles / séminaire / événementiel → Événements (pas Hôtel)
   if(is("7061"))return "ca_hotel";
   if(is("70"))return "ca";
   if(is("74","75","78"))return "autres_produits";
   if(is("76"))return "prod_fin";
   if(is("77"))return "prod_except";
+  if(is("7"))return "autres_produits"; // filet : tout compte de classe 7 restant (71,72,73,79…) rejoint les autres produits — aucun produit n'est perdu
   // Charges (classe 6)
   if(is("601","602","603","607"))return "matieres";
   if(is("6061"))return "energie";
@@ -362,7 +411,7 @@ function healthFrom(v){
     {key:"ms",ic:<Users size={17}/>,t:"Masse salariale",d:"Charges de personnel ÷ CA HT · repère < 35 %",v:rMS,s:evalRatio(rMS,35,45)},
     {key:"prime",ic:<Coins size={17}/>,t:"Coût principal",d:"Coût matières + personnel · repère < 65 %",v:rPrime,s:evalRatio(rPrime,65,72)},
     {key:"loy",ic:<Landmark size={17}/>,t:"Poids des loyers",d:"Loyers ÷ CA HT · repère < 8–10 %",v:rLoy,s:evalRatio(rLoy,10,14)},
-    {key:"ebe",ic:<Wallet size={17}/>,t:"Marge d'EBE",d:"EBE (excédent brut d'exploitation) ÷ CA HT · repère > 12 %",v:rEBE,s:evalRatio(rEBE,12,4,true)},
+    {key:"ebe",ic:<Wallet size={17}/>,t:"Marge d'EBE",d:"Ce qui reste une fois payées matières, personnel et charges courantes (avant amortissements et impôts), en % du CA · repère > 12 %",v:rEBE,s:evalRatio(rEBE,12,4,true)},
   ];
   const w={food:22,ms:22,prime:18,loy:15,ebe:23},sc={good:100,warn:62,bad:28};
   let t=0,ws=0;ratios.forEach(r=>{t+=sc[r.s]*w[r.key];ws+=w[r.key];});
@@ -466,7 +515,7 @@ export default function App(){
       loyer:0,autres_loc:0,entretien:0,assurances:0,energie:0,divers_fixe:0,honoraires:0,
       telecom:0,bq_fixe:0,deplacements:0,impots_fixe:0,autres_gc:0,
       salaires:0,urssaf:0,mutuelle:0,retraite:0,autres_orgs:0,taxes_sal:0,
-      dotations:0,charges_fin:0,charges_except:0,ca:0,ca_hotel:0,ca_petitdej:0,autres_produits:0,prod_fin:0,prod_except:0};
+      dotations:0,charges_fin:0,charges_except:0,ca:0,ca_hotel:0,ca_petitdej:0,ca_evt:0,autres_produits:0,prod_fin:0,prod_except:0};
     let ignored=0,classified=0;
     if(bal&&bal.source==="pdf"){
       (bal.parsed||[]).forEach(r=>{
@@ -501,10 +550,11 @@ export default function App(){
   const caBar=g("ca_bar",J?J.bar:0);
   const caHotel=g("ca_hotel",B.ca_hotel);
   const caPdej=g("ca_petitdej",B.ca_petitdej);
-  const caEvt=g("ca_evt",J?J.event:0);
-  const CA=caResto+caBar+caHotel+caPdej+caEvt;
+  const caEvt=g("ca_evt",J?J.event:B.ca_evt); // Jalia si dispo, sinon compta 70612 ; jamais les deux → pas de doublon
+  const caAutres=g("ca_autres",J?J.autres:0); // caisse uniquement : périmètre bar-resto, remplace le compta — jamais additionné à la balance
+  const CA=caResto+caBar+caHotel+caPdej+caEvt+caAutres;
   // Écart caisse (Jalia) vs compta (balance) sur le périmètre bar-restau
-  const ecartCaisse=J?Math.round(((J.resto+J.bar+J.event)-B.ca)*100)/100:null;
+  const ecartCaisse=J?Math.round(((J.resto+J.bar+J.event+J.autres)-B.ca)*100)/100:null;
 
   // Postes (auto ou override)
   const P={};
@@ -527,7 +577,7 @@ export default function App(){
   const RN=RAI-IS;
 
   // Contrôle de cohérence de la LECTURE de la balance (indépendant de Jalia)
-  const autoProduits=B.ca+B.ca_hotel+B.ca_petitdej+B.autres_produits+B.prod_fin+B.prod_except;
+  const autoProduits=B.ca+B.ca_hotel+B.ca_petitdej+B.ca_evt+B.autres_produits+B.prod_fin+B.prod_except;
   const autoCharges=B.matieres+B.conso_var+B.comm_var+B.cb_var+B.pub+B.loyer+B.autres_loc+B.entretien
     +B.assurances+B.energie+B.divers_fixe+B.honoraires+B.telecom+B.bq_fixe+B.deplacements+B.impots_fixe
     +B.autres_gc+B.salaires+B.urssaf+B.mutuelle+B.retraite+B.autres_orgs+B.taxes_sal+B.dotations
@@ -539,7 +589,7 @@ export default function App(){
   /* ---- Suivi annuel : lignes du mois courant ---- */
   const LIGNES=[
     ["ca_resto","CA Restauration",caResto],["ca_bar","CA Bar",caBar],["ca_hotel","CA Hôtel",caHotel],
-    ["ca_pdej","CA Petit déjeuner",caPdej],["ca_evt","CA Événements",caEvt],["CA","TOTAL CA HT",CA,"sub"],
+    ["ca_pdej","CA Petit déjeuner",caPdej],["ca_evt","CA Événements",caEvt],["ca_autres","CA Autres / Divers",caAutres],["CA","TOTAL CA HT",CA,"sub"],
     ["matieres","Matières premières",P.matieres],["conso_var","Consommables variables",P.conso_var],
     ["comm_var","Commissions plateformes",P.comm_var],["cb_var","Frais bancaires variables",P.cb_var],
     ["pub","Publicité",P.pub],["CV","TOTAL CHARGES VARIABLES",CV,"sub"],
@@ -683,20 +733,36 @@ export default function App(){
   };
 
   /* ---- Hôtel ---- */
-  const [chambres,setChambres]=useState(20);
-  const [yearH,setYearH]=useState(now.getFullYear());
-  const [hM,setHM]=useState(()=>Array(12).fill(null).map(()=>({v:"",ca:""})));
-  const setHMv=(i,k,v)=>setHM(m=>m.map((x,j)=>j===i?{...x,[k]:v}:x));
-  const dIn=(i)=>new Date(yearH,i+1,0).getDate();
+  const [pms,setPms]=useState(null);
+  const [parsingP,setParsingP]=useState(false);
+  const [chambres,setChambres]=useState(0);
+  const onPms=(d)=>{
+    if(d.error){setPms({name:d.name,error:d.error});return;}
+    const res=parsePMS(d);
+    if(!res.ok){setPms({name:d.name,error:res.error});return;}
+    setPms({name:d.name,...res});
+    if(res.capDetect)setChambres(res.capDetect);
+  };
   const hotel=useMemo(()=>{
-    let dispo=0,vend=0,caT=0;
-    const rows=hM.map((m,i)=>{
-      const d=dIn(i)*(chambres||0),v=toNum(m.v),c=toNum(m.ca);
-      dispo+=d;vend+=v;caT+=c;
-      return{mois:MOISC[i],dispo:d,v,ca:c,to:d?(v/d)*100:0};
-    });
-    return{rows,dispo,vend,caT,toAn:dispo?(vend/dispo)*100:0,adr:vend?caT/vend:0,revpar:dispo?caT/dispo:0};
-  },[hM,chambres,yearH]);
+    if(!pms||!pms.days)return null;
+    const D=pms.days, cap=chambres||0, jours=D.length, dispo=cap*jours;
+    const S=(k)=>D.reduce((a,x)=>a+(x[k]||0),0);
+    const vend=S("occ"), rev=S("rev"), sup=S("sup"), arr=S("arr"), pers=S("pers"), hs=S("hs"),
+          ind=S("ind"), grp=S("grp");
+    // Le taux est recalculé sur la capacité retenue, pour rester cohérent si elle est ajustée
+    const rows=D.map(x=>({...x,to:cap?(x.occ/cap)*100:0}));
+    const parJour=Array(7).fill(null).map(()=>({s:0,n:0}));
+    rows.forEach(x=>{parJour[x.jsem].s+=x.to;parJour[x.jsem].n++;});
+    const semaine=[1,2,3,4,5,6,0].map(j=>({jour:JSEM[j].slice(0,3),complet:JSEM[j],
+      to:parJour[j].n?parJour[j].s/parJour[j].n:0}));
+    const tri=[...rows].sort((a,b)=>b.to-a.to);
+    return {rows,semaine,cap,jours,dispo,vend,rev,sup,arr,pers,hs,ind,grp,
+      to:dispo?(vend/dispo)*100:0,
+      adr:vend?rev/vend:0, revpar:dispo?rev/dispo:0,
+      dms:arr?vend/arr:0, parCh:vend?pers/vend:0,
+      partInd:(ind+grp)?ind/(ind+grp)*100:0,
+      meilleur:tri[0]||null, pire:tri[tri.length-1]||null};
+  },[pms,chambres]);
 
   /* ---- Export xlsx ---- */
   const exportXlsx=()=>{
@@ -708,7 +774,7 @@ export default function App(){
       {l:"CHIFFRE D'AFFAIRES HT",t:"sec"},
       {l:"Restauration",v:r2(caResto),t:"row"},{l:"Bar",v:r2(caBar),t:"row"},
       {l:"Hôtel",v:r2(caHotel),t:"row"},{l:"Petit déjeuner",v:r2(caPdej),t:"row"},
-      {l:"Événements",v:r2(caEvt),t:"row"},{l:"Total CA HT",v:r2(CA),t:"tot"},
+      {l:"Événements",v:r2(caEvt),t:"row"},{l:"Autres / Divers",v:r2(caAutres),t:"row"},{l:"Total CA HT",v:r2(CA),t:"tot"},
       {l:"CHARGES VARIABLES",t:"sec"},
       {l:"Coût matières",v:r2(P.matieres),t:"row"},{l:"Consommables variables",v:r2(P.conso_var),t:"row"},
       {l:"Commissions plateformes",v:r2(P.comm_var),t:"row"},{l:"Frais bancaires variables (CB)",v:r2(P.cb_var),t:"row"},
@@ -781,7 +847,7 @@ export default function App(){
     const S="sec",T="tot",X="res";
     const pl=[
       ["CHIFFRE D'AFFAIRES HT","",S],
-      ["Restauration",caResto],["Bar",caBar],["Hôtel",caHotel],["Petit déjeuner",caPdej],["Événements",caEvt],
+      ["Restauration",caResto],["Bar",caBar],["Hôtel",caHotel],["Petit déjeuner",caPdej],["Événements",caEvt],["Autres / Divers",caAutres],
       ["Total CA HT",CA,T],
       ["CHARGES VARIABLES","",S],
       ["Coût matières",P.matieres],["Autres charges variables",autresVar],["Total charges variables",CV,T],
@@ -897,7 +963,7 @@ export default function App(){
 
         <div className="card">
           <h3>Ventilation du CA — export caisse (Jalia)</h3>
-          <p className="sub">Optionnel. Répartit le CA bar-restaurant en Restauration / Bar / Événements d'après les familles de la caisse. Hôtel et Petit déj restent issus de la balance.</p>
+          <p className="sub">Optionnel. Répartit le CA bar-restaurant en Restauration / Bar / Événements / Autres d'après les familles de la caisse. Hôtel et Petit déj restent issus de la balance.</p>
           <DropZone onFile={onJalia} name={jalia?.name} onParsing={setParsingJ} parsing={parsingJ}
             what="l'export caisse (.xlsx)"
             hint="Export statistiques Jalia (.xlsx) avec colonnes parent / HT"/>
@@ -908,13 +974,15 @@ export default function App(){
               <tbody>
                 {jalia.families.map((f,i)=>(<tr key={i}>
                   <td>{f.parent}</td>
-                  <td style={{textAlign:"left",textTransform:"capitalize"}}>{({resto:"Restauration",bar:"Bar",hotel:"Hôtel",petitdej:"Petit déj",event:"Événement"})[f.cat]}</td>
+                  <td style={{textAlign:"left",textTransform:"capitalize"}}>{({resto:"Restauration",bar:"Bar",hotel:"Hôtel",petitdej:"Petit déj",event:"Événement",autres:"Autres / Divers"})[f.cat]}</td>
                   <td style={{textAlign:"right"}} className="num">{eur2(f.ht)}</td></tr>))}
                 <tr className="tot"><td>Total caisse</td><td></td><td style={{textAlign:"right"}} className="num">{eur2(jalia.total)}</td></tr>
               </tbody>
             </table>
             {ecartCaisse!=null&&<div className="hint" style={{marginTop:12}}><Info size={16}/>
-              <span>Écart caisse / compta sur le bar-restaurant : {ecartCaisse>=0?"+":""}{eur2(ecartCaisse)} (Jalia {eur2(jalia.cats.resto+jalia.cats.bar+jalia.cats.event)} vs balance {eur2(B.ca)}). Normal entre caisse et comptabilité ; le CA affiché suit la caisse.</span></div>}
+              <span>Écart caisse / compta sur le bar-restaurant : {ecartCaisse>=0?"+":""}{eur2(ecartCaisse)} (Jalia {eur2(jalia.cats.resto+jalia.cats.bar+jalia.cats.event+jalia.cats.autres)} vs balance {eur2(B.ca)}). Normal entre caisse et comptabilité ; le CA affiché suit la caisse.</span></div>}
+            {(jalia.cats.hotel>0||jalia.cats.petitdej>0)&&<div className="hint warn" style={{marginTop:12}}><Info size={16}/>
+              <span>Votre export caisse contient {eur2(jalia.cats.hotel+jalia.cats.petitdej)} d'Hôtel / Petit déj. Ces montants sont <b>exclus du CA</b> (pris de la balance) pour éviter un doublon.</span></div>}
           </>}
         </div>
 
@@ -938,6 +1006,7 @@ export default function App(){
             <Row k="ca_hotel" label="CA Hôtel" cpt="7061" auto={caHotel}/>
             <Row k="ca_petitdej" label="CA Petit déjeuner" cpt="706111" auto={caPdej}/>
             <Row k="ca_evt" label="CA Événements" cpt={J?"caisse":"analytique"} auto={caEvt}/>
+            <Row k="ca_autres" label="CA Autres / Divers" cpt={J?"caisse":"—"} auto={caAutres}/>
             <Line label="TOTAL CA HT" v={CA} cls="sub"/>
 
             <tr className="sec"><td colSpan={3}>Charges variables HT</td></tr>
@@ -987,7 +1056,9 @@ export default function App(){
           {(P.dotations===0)&&<div className="hint warn"><Info size={16}/>
             <span>Aucune dotation aux amortissements (compte 68) détectée dans cette balance — la ligne reste à 0. Si les immobilisations doivent peser sur le résultat, vérifiez que l'export descend bien le compte 681.</span></div>}
           <div className="hint"><Info size={16}/>
-            <span>Restauration / Bar / Événements viennent de la caisse Jalia si importée (sinon à saisir) ; Hôtel et Petit déj de la balance. Chaque ligne reste modifiable, et les ratios utilisent le CA total.</span></div>
+            <span><b>EBE</b> (excédent brut d'exploitation) = ce qui reste de votre activité une fois payées les charges courantes (matières, personnel, loyers…), avant amortissements et impôts — votre rentabilité au quotidien. Le <b>résultat net</b>, tout en bas, est ce qui reste vraiment une fois tout payé, impôt compris.</span></div>
+          <div className="hint"><Info size={16}/>
+            <span>Restauration / Bar / Événements / Autres viennent de la caisse Jalia si importée (sinon à saisir) ; Hôtel et Petit déj de la balance. Chaque ligne reste modifiable, et les ratios utilisent le CA total.</span></div>
         </div>
       </>}
 
@@ -1168,57 +1239,130 @@ export default function App(){
 
       {/* ========== HÔTEL ========== */}
       {tab==="hotel"&&<>
+        <div className="card"><h3>Fichier de réservation</h3>
+          <p className="sub">Importez l'export de statistiques de votre logiciel de réservation. Le remplissage et les indicateurs sont calculés automatiquement, comme pour la balance et la caisse.</p>
+          <DropZone onFile={onPms} name={pms?.name} onParsing={setParsingP} parsing={parsingP}
+            what="l'export du logiciel de réservation (Excel)"/>
+          {pms?.error&&<div className="hint warn"><Info size={16}/><span>{pms.error}</span></div>}
+        </div>
+
+        {hotel&&<>
         <div className="card"><h3>Paramètres</h3>
           <div className="inline-fields">
-            <div className="ifield"><label>Nombre de chambres</label><input type="number" value={chambres} onChange={e=>setChambres(+e.target.value)}/></div>
-            <div className="ifield"><label>Année</label><input type="number" value={yearH} onChange={e=>setYearH(+e.target.value)}/></div>
+            <div className="ifield"><label>Nombre de chambres</label>
+              <input type="number" value={chambres} onChange={e=>setChambres(+e.target.value)}/></div>
+            <div className="ifield"><label>Période lue</label><input value={pms.periode} readOnly/></div>
+            <div className="ifield"><label>Jours analysés</label><input value={hotel.jours} readOnly/></div>
           </div>
-          <p className="mini" style={{marginTop:10}}>Nuitées disponibles = chambres × jours du mois. Saisissez les nuitées vendues (et le CA hébergement pour ADR / RevPAR).</p>
+          <p className="mini" style={{marginTop:10}}>
+            Déduit du fichier : <b>{pms.capDetect} chambres</b> (cohérent sur {pms.capAccord} % des journées) ·
+            maximum occupé sur la période : <b>{pms.occMax}</b>. Ajustez si votre décompte diffère : tous les taux se recalculent.
+          </p>
+          {chambres>0&&pms.occMax>chambres&&<div className="hint warn"><Info size={16}/>
+            <span>Le fichier enregistre jusqu'à {pms.occMax} chambres occupées le même jour, alors que {chambres} sont paramétrées : certains taux dépasseront 100 %. Vérifiez le nombre de chambres réellement commercialisées.</span></div>}
         </div>
+
         <div className="kpi-grid" style={{marginBottom:16}}>
-          <div className="kpi"><div className="lab">Taux d'occupation annuel</div><div className="val num" style={{color:"var(--primary)"}}>{pct(hotel.toAn)}</div><div className="mini">lissé sur l'année</div></div>
-          <div className="kpi"><div className="lab">Prix moyen (ADR)</div><div className="val num">{eur(hotel.adr)}</div></div>
-          <div className="kpi"><div className="lab">RevPAR</div><div className="val num">{eur(hotel.revpar)}</div></div>
-          <div className="kpi"><div className="lab">Nuitées vendues</div><div className="val num">{num(hotel.vend)}<small> / {num(hotel.dispo)}</small></div></div>
+          <div className="kpi"><div className="lab">Taux de remplissage</div>
+            <div className="val num" style={{color:"var(--sage)"}}>{pct(hotel.to)}</div>
+            <div className="mini">{num(hotel.vend)} nuitées vendues sur {num(hotel.dispo)}</div></div>
+          <div className="kpi"><div className="lab">Durée moyenne de séjour</div>
+            <div className="val num">{hotel.dms.toLocaleString("fr-FR",{maximumFractionDigits:2})}<small> nuits</small></div>
+            <div className="mini">{num(hotel.arr)} arrivées</div></div>
+          <div className="kpi"><div className="lab">Personnes par chambre</div>
+            <div className="val num">{hotel.parCh.toLocaleString("fr-FR",{maximumFractionDigits:2})}</div>
+            <div className="mini">{num(hotel.pers)} personnes accueillies</div></div>
+          <div className="kpi"><div className="lab">Chambres hors service</div>
+            <div className="val num">{num(hotel.hs)}</div>
+            <div className="mini">cumul sur la période</div></div>
         </div>
-        <div className="card"><h3>Détail mensuel</h3>
-          <p className="sub">Le taux annuel est pondéré par le nombre de jours de chaque mois.</p>
-          <div style={{overflowX:"auto"}}><table className="tbl">
-            <thead><tr><th>Mois</th><th>Jours</th><th>Dispo.</th><th>Vendues</th><th>CA héberg.</th><th>Taux occ.</th></tr></thead>
-            <tbody>
-              {hotel.rows.map((r,i)=>(<tr key={i}>
-                <td>{r.mois}</td><td style={{textAlign:"right"}} className="mini">{dIn(i)}</td>
-                <td style={{textAlign:"right"}} className="num">{num(r.dispo)}</td>
-                <td style={{width:110}}><input type="number" value={hM[i].v} onChange={e=>setHMv(i,"v",e.target.value)} placeholder="0"/></td>
-                <td style={{width:120}}><input type="number" value={hM[i].ca} onChange={e=>setHMv(i,"ca",e.target.value)} placeholder="€"/></td>
-                <td style={{textAlign:"right",fontWeight:600,color:r.to>=70?"var(--green)":r.to>=45?"var(--amber)":r.to>0?"var(--red)":"var(--ink2)"}} className="num">{r.dispo?pct(r.to):"—"}</td>
-              </tr>))}
-              <tr className="tot"><td>Année</td><td></td>
-                <td style={{textAlign:"right"}} className="num">{num(hotel.dispo)}</td>
-                <td style={{textAlign:"right"}} className="num">{num(hotel.vend)}</td>
-                <td style={{textAlign:"right"}} className="num">{eur(hotel.caT)}</td>
-                <td style={{textAlign:"right",color:"var(--primary)"}} className="num">{pct(hotel.toAn)}</td></tr>
-            </tbody></table></div>
-        </div>
-        <div className="card"><h3>Saisonnalité du taux d'occupation</h3>
-          <p className="sub">Barres = taux mensuel · ligne = moyenne annuelle lissée.</p>
+
+        {hotel.rev>0&&<div className="kpi-grid" style={{marginBottom:16}}>
+          <div className="kpi"><div className="lab">Prix moyen de la chambre (ADR)</div>
+            <div className="val num">{eur2(hotel.adr)}</div>
+            <div className="mini">moyenne des chambres occupées</div></div>
+          <div className="kpi"><div className="lab">Revenu par chambre (RevPAR)</div>
+            <div className="val num">{eur2(hotel.revpar)}</div>
+            <div className="mini">réparti sur toutes les chambres, vides comprises</div></div>
+        </div>}
+
+        {hotel.rev>0&&<div className="hint"><Info size={16}/>
+          <span><b>Prix moyen de la chambre (ADR)</b> : ce qu'a rapporté en moyenne une chambre <i>occupée</i>. <b>Revenu par chambre (RevPAR)</b> : le même revenu réparti sur <i>toutes</i> vos chambres, y compris celles restées vides — c'est l'indicateur de performance réelle. Comme au cinéma : le premier est le prix moyen du billet vendu, le second la recette rapportée à tous les fauteuils de la salle.</span></div>}
+
+        <div className="card"><h3>Remplissage jour par jour</h3>
+          <p className="sub">Chaque barre est une journée. Les creux se repèrent d'un coup d'oeil.</p>
           <ResponsiveContainer width="100%" height={260}>
             <ComposedChart data={hotel.rows} margin={{top:8,right:8,left:0,bottom:0}}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#EAEDEF" vertical={false}/>
-              <XAxis dataKey="mois" tick={{fontSize:11,fill:"#4A5E6B"}}/>
-              <YAxis tick={{fontSize:11,fill:"#4A5E6B"}} domain={[0,100]} tickFormatter={v=>v+"%"}/>
-              <Tooltip formatter={(v,n)=>n==="to"?pct(v):v} labelStyle={{fontWeight:600}}/>
-              <Bar dataKey="to" name="Taux occ." radius={[5,5,0,0]}>
-                {hotel.rows.map((r,i)=><Cell key={i} fill={r.to>=70?"var(--green)":r.to>=45?"var(--amber)":"var(--red)"}/>)}
+              <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
+              <XAxis dataKey="label" tick={{fontSize:10,fill:"#7A7268"}} interval={2}/>
+              <YAxis tick={{fontSize:11,fill:"#7A7268"}} domain={[0,100]} tickFormatter={v=>v+"%"}/>
+              <Tooltip formatter={v=>pct(v)} labelStyle={{fontWeight:700}}/>
+              <Bar dataKey="to" name="Remplissage" radius={[4,4,0,0]}>
+                {hotel.rows.map((r,i)=><Cell key={i} fill={r.to>=70?"var(--sage)":r.to>=45?"var(--taupe)":"#C77B6B"}/>)}
               </Bar>
-              <ReferenceLine y={hotel.toAn} stroke="var(--ink)" strokeDasharray="4 3"
-                label={{value:`Moy. ${pct(hotel.toAn)}`,position:"right",fontSize:10,fill:"var(--ink)"}}/>
+              <ReferenceLine y={hotel.to} stroke="var(--ink)" strokeDasharray="4 3"
+                label={{value:"Moy. "+pct(hotel.to),position:"right",fontSize:10,fill:"var(--ink)"}}/>
             </ComposedChart>
           </ResponsiveContainer>
-          <div className="legend"><span><i style={{background:"var(--green)"}}></i>≥ 70 %</span>
-            <span><i style={{background:"var(--amber)"}}></i>45–70 %</span>
-            <span><i style={{background:"var(--red)"}}></i>&lt; 45 %</span></div>
+          <div className="legend"><span><i style={{background:"var(--sage)"}}></i>&ge; 70 %</span>
+            <span><i style={{background:"var(--taupe)"}}></i>45&ndash;70 %</span>
+            <span><i style={{background:"#C77B6B"}}></i>&lt; 45 %</span></div>
+          {hotel.meilleur&&<p className="mini" style={{marginTop:10}}>
+            Meilleure journée : <b>{hotel.meilleur.label}</b> ({pct(hotel.meilleur.to)}) ·
+            plus faible : <b>{hotel.pire.label}</b> ({pct(hotel.pire.to)}).</p>}
         </div>
+
+        <div className="card"><h3>Remplissage par jour de la semaine</h3>
+          <p className="sub">Moyenne sur la période — pour repérer les jours à travailler.</p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={hotel.semaine} margin={{top:8,right:8,left:0,bottom:0}}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
+              <XAxis dataKey="jour" tick={{fontSize:11,fill:"#7A7268"}}/>
+              <YAxis tick={{fontSize:11,fill:"#7A7268"}} domain={[0,100]} tickFormatter={v=>v+"%"}/>
+              <Tooltip formatter={v=>pct(v)} labelStyle={{fontWeight:700}}/>
+              <Bar dataKey="to" name="Remplissage moyen" radius={[5,5,0,0]}>
+                {hotel.semaine.map((r,i)=><Cell key={i} fill={r.to>=70?"var(--sage)":r.to>=45?"var(--taupe)":"#C77B6B"}/>)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {(hotel.ind+hotel.grp)>0&&<div className="card"><h3>Origine des réservations</h3>
+          <p className="sub">Répartition entre clientèle individuelle et groupes.</p>
+          <div className="kpi-grid">
+            <div className="kpi"><div className="lab">Individuels</div>
+              <div className="val num">{pct(hotel.partInd)}</div>
+              <div className="mini">{num(hotel.ind)} nuitées</div></div>
+            <div className="kpi"><div className="lab">Groupes</div>
+              <div className="val num">{pct(100-hotel.partInd)}</div>
+              <div className="mini">{num(hotel.grp)} nuitées</div></div>
+          </div>
+        </div>}
+
+        <div className="card"><h3>Détail des journées</h3>
+          <div style={{overflowX:"auto"}}><table className="tbl">
+            <thead><tr><th>Date</th><th>Jour</th><th style={{textAlign:"right"}}>Chambres occupées</th>
+              <th style={{textAlign:"right"}}>Remplissage</th><th style={{textAlign:"right"}}>Arrivées</th>
+              <th style={{textAlign:"right"}}>Personnes</th><th style={{textAlign:"right"}}>Hors service</th></tr></thead>
+            <tbody>
+              {hotel.rows.map((r,i)=>(<tr key={i}>
+                <td>{r.label}</td><td className="mini">{JSEM[r.jsem]}</td>
+                <td style={{textAlign:"right"}} className="num">{num(r.occ)}</td>
+                <td style={{textAlign:"right",fontWeight:600,
+                  color:r.to>=70?"var(--sage)":r.to>=45?"var(--taupe)":"#C77B6B"}} className="num">{pct(r.to)}</td>
+                <td style={{textAlign:"right"}} className="num">{num(r.arr)}</td>
+                <td style={{textAlign:"right"}} className="num">{num(r.pers)}</td>
+                <td style={{textAlign:"right"}} className="num">{r.hs?num(r.hs):"—"}</td>
+              </tr>))}
+              <tr className="tot"><td>Total</td><td></td>
+                <td style={{textAlign:"right"}} className="num">{num(hotel.vend)}</td>
+                <td style={{textAlign:"right",color:"var(--sage)"}} className="num">{pct(hotel.to)}</td>
+                <td style={{textAlign:"right"}} className="num">{num(hotel.arr)}</td>
+                <td style={{textAlign:"right"}} className="num">{num(hotel.pers)}</td>
+                <td style={{textAlign:"right"}} className="num">{num(hotel.hs)}</td></tr>
+            </tbody></table></div>
+        </div>
+        </>}
       </>}
     </div></div>
   );
