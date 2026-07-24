@@ -739,20 +739,18 @@ export default function App(){
   const [pms,setPms]=useState(null);
   const [parsingP,setParsingP]=useState(false);
   const [chambres,setChambres]=useState(0);
-  const [inclPrev,setInclPrev]=useState(false);
   const onPms=(d)=>{
     if(d.error){setPms({name:d.name,error:d.error});return;}
     const res=parsePMS(d);
     if(!res.ok){setPms({name:d.name,error:res.error});return;}
     setPms({name:d.name,...res});
     if(res.capDetect)setChambres(res.capDetect);
-    setInclPrev(false);
   };
   const hotel=useMemo(()=>{
     if(!pms||!pms.days)return null;
     const cap=chambres||0;
     const hist=pms.days.filter(x=>!x.prev);
-    const D=(inclPrev||!hist.length)?pms.days:hist;
+    const D=hist.length?hist:pms.days; // les journées à venir sont écartées
     if(!D.length)return null;
     const jours=D.length, dispo=cap*jours;
     const S=(k)=>D.reduce((a,x)=>a+(x[k]||0),0);
@@ -765,19 +763,13 @@ export default function App(){
     const semaine=[1,2,3,4,5,6,0].map(j=>({jour:JSEM[j].slice(0,3),complet:JSEM[j],
       to:parJour[j].n?parJour[j].s/parJour[j].n:0}));
     const tri=[...rows].sort((a,b)=>b.to-a.to);
-    // Journées à venir : réservations déjà enregistrées, présentées à part
-    const P=pms.days.filter(x=>x.prev);
-    const prevu=P.length?{jours:P.length,vend:P.reduce((a,x)=>a+(x.occ||0),0),
-      dispo:cap*P.length}:null;
-    if(prevu)prevu.to=prevu.dispo?(prevu.vend/prevu.dispo)*100:0;
-    return {rows,semaine,cap,jours,dispo,vend,rev,sup,arr,pers,hs,ind,grp,prevu,
-      inclutPrev:(inclPrev||!hist.length)&&P.length>0,
+    return {rows,semaine,cap,jours,dispo,vend,rev,sup,arr,pers,hs,ind,grp,
       to:dispo?(vend/dispo)*100:0,
       adr:vend?rev/vend:0, revpar:dispo?rev/dispo:0,
       dms:arr?vend/arr:0, parCh:vend?pers/vend:0,
       partInd:(ind+grp)?ind/(ind+grp)*100:0,
       meilleur:tri[0]||null, pire:tri[tri.length-1]||null};
-  },[pms,chambres,inclPrev]);
+  },[pms,chambres]);
 
   /* ---- Export xlsx ---- */
   const exportXlsx=()=>{
@@ -1274,11 +1266,7 @@ export default function App(){
             maximum occupé sur la période : <b>{pms.occMax}</b>. Ajustez si votre décompte diffère : tous les taux se recalculent.
           </p>
           {pms.nbPrev>0&&<div className="hint"><Info size={16}/>
-            <span>Ce fichier contient <b>{pms.nbHist} journée{pms.nbHist>1?"s":""} déjà réalisée{pms.nbHist>1?"s":""}</b> et <b>{pms.nbPrev} journée{pms.nbPrev>1?"s":""} à venir</b> (réservations déjà enregistrées).
-            {hotel.prevu&&<> Les jours à venir affichent pour l'instant {pct(hotel.prevu.to)} de remplissage — un chiffre qui montera encore avec les réservations de dernière minute.</>}
-            <label style={{display:"inline-flex",alignItems:"center",gap:6,marginLeft:8,cursor:"pointer"}}>
-              <input type="checkbox" checked={inclPrev} onChange={e=>setInclPrev(e.target.checked)}/>
-              <span>les inclure dans les chiffres ci-dessous</span></label></span></div>}
+            <span>{pms.nbPrev} journée{pms.nbPrev>1?"s":""} à venir (réservations en cours) {pms.nbPrev>1?"ont été écartées":"a été écartée"} du calcul : seules les {pms.nbHist} journées déjà réalisées sont prises en compte.</span></div>}
           {chambres>0&&pms.occMax>chambres&&<div className="hint warn"><Info size={16}/>
             <span>Le fichier enregistre jusqu'à {pms.occMax} chambres occupées le même jour, alors que {chambres} sont paramétrées : certains taux dépasseront 100 %. Vérifiez le nombre de chambres réellement commercialisées.</span></div>}
         </div>
@@ -1286,7 +1274,7 @@ export default function App(){
         <div className="kpi-grid" style={{marginBottom:16}}>
           <div className="kpi"><div className="lab">Taux de remplissage</div>
             <div className="val num" style={{color:"var(--sage)"}}>{pct(hotel.to)}</div>
-            <div className="mini">{num(hotel.vend)} nuitées vendues sur {num(hotel.dispo)}{hotel.inclutPrev?" · prévisionnel inclus":pms.nbPrev>0?" · jours réalisés":""}</div></div>
+            <div className="mini">{num(hotel.vend)} nuitées vendues sur {num(hotel.dispo)}</div></div>
           <div className="kpi"><div className="lab">Durée moyenne de séjour</div>
             <div className="val num">{hotel.dms.toLocaleString("fr-FR",{maximumFractionDigits:2})}<small> nuits</small></div>
             <div className="mini">{num(hotel.arr)} arrivées</div></div>
