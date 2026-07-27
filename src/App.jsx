@@ -805,15 +805,26 @@ export default function App(){
     const rest=Object.keys(hStore).filter(y=>y!==hExYear).sort();
     setHExYear(rest.length?rest[rest.length-1]:String(now.getFullYear()));
   };
+  const [hFrom,setHFrom]=useState(0);
+  const [hTo,setHTo]=useState(0);
+  const hAvail=useMemo(()=>[...hSuivi].map(m=>m.mois).sort((a,b)=>a-b),[hSuivi]);
+  useEffect(()=>{setHFrom(0);setHTo(0);},[hExYear]);
   const hCumul=useMemo(()=>{
     if(!hSuivi.length)return null;
-    const S=(k)=>hSuivi.reduce((a,m)=>a+(m[k]||0),0);
+    const lo=hFrom||hAvail[0], hi=hTo||hAvail[hAvail.length-1];
+    const a=Math.min(lo,hi), b=Math.max(lo,hi);
+    const sel=[...hSuivi].sort((x,y)=>x.mois-y.mois).filter(m=>m.mois>=a&&m.mois<=b);
+    if(!sel.length)return null;
+    const S=(k)=>sel.reduce((acc,m)=>acc+(m[k]||0),0);
     const vend=S("vend"),dispo=S("dispo"),rev=S("rev"),arr=S("arr"),pers=S("pers"),hs=S("hs");
-    return {n:hSuivi.length,vend,dispo,rev,arr,pers,hs,
+    const full=sel.length===hSuivi.length;
+    return {n:sel.length,total:hSuivi.length,full,months:sel,
+      libPeriode:full?"toute la saison":`${MOIS[a-1]}${a!==b?" → "+MOIS[b-1]:""}`,
+      vend,dispo,rev,arr,pers,hs,
       to:dispo?vend/dispo*100:0, adr:vend?rev/vend:0, revpar:dispo?rev/dispo:0,
       dms:arr?vend/arr:0, parCh:vend?pers/vend:0,
-      curve:hSuivi.map(m=>({label:m.label,to:Math.round(m.to*10)/10,adr:Math.round(m.adr),revpar:Math.round(m.revpar)}))};
-  },[hSuivi]);
+      curve:sel.map(m=>({label:m.label,to:Math.round(m.to*10)/10,adr:Math.round(m.adr),revpar:Math.round(m.revpar)}))};
+  },[hSuivi,hFrom,hTo,hAvail]);
   const hCmp=useMemo(()=>{
     const years=Object.keys(hStore).sort();
     if(!years.length)return null;
@@ -1437,10 +1448,21 @@ export default function App(){
               <select value={hExYear} onChange={e=>setHExYear(e.target.value)}>
                 {(hList.length?hList:[hExYear]).map(y=><option key={y} value={y}>{y}</option>)}
               </select></div>
+            {hAvail.length>1&&<>
+              <div className="ifield" style={{minWidth:110}}><label>De</label>
+                <select value={hFrom||hAvail[0]} onChange={e=>setHFrom(+e.target.value)}>
+                  {hAvail.map(m=><option key={m} value={m}>{MOIS[m-1]}</option>)}
+                </select></div>
+              <div className="ifield" style={{minWidth:110}}><label>À</label>
+                <select value={hTo||hAvail[hAvail.length-1]} onChange={e=>setHTo(+e.target.value)}>
+                  {hAvail.map(m=><option key={m} value={m}>{MOIS[m-1]}</option>)}
+                </select></div>
+              {(hFrom||hTo)&&<button className="btn ghost" onClick={()=>{setHFrom(0);setHTo(0);}} title="Toute la saison">Tout</button>}
+            </>}
             <div style={{flex:1}}/>
             {hSuivi.length>0&&<button className="btn ghost" onClick={deleteHotelYear} title="Supprimer cette saison" style={{color:"var(--red)"}}><Trash2 size={14}/></button>}
           </div>
-          <p className="mini" style={{marginTop:12}}>{hSuivi.length} mois enregistré{hSuivi.length>1?"s":""}. Depuis l'onglet « Mois », importez un export puis cliquez « Ajouter ce mois au suivi hôtel ».</p>
+          <p className="mini" style={{marginTop:12}}>{hSuivi.length} mois enregistré{hSuivi.length>1?"s":""}{hCumul&&!hCumul.full?` · période analysée : ${hCumul.libPeriode} (${hCumul.n} mois)`:""}. Depuis l'onglet « Mois », importez un export puis cliquez « Ajouter ce mois au suivi hôtel ».</p>
           </div>
 
           {!hCumul ? <div className="card"><div className="hint"><CalendarDays size={16}/><span>Saison {hExYear} vide. Ajoutez des mois depuis l'onglet « Mois » — chacun viendra remplir le cumul et les courbes.</span></div></div>
@@ -1481,7 +1503,7 @@ export default function App(){
             <div className="card"><h3>Détail des mois</h3>
               <div style={{overflowX:"auto"}}><table className="tbl">
                 <thead><tr><th>Mois</th><th style={{textAlign:"right"}}>Remplissage</th><th style={{textAlign:"right"}}>ADR</th><th style={{textAlign:"right"}}>RevPAR</th><th style={{textAlign:"right"}}>Nuitées</th><th></th></tr></thead>
-                <tbody>{hSuivi.map((m,i)=>(<tr key={i}>
+                <tbody>{hCumul.months.map((m,i)=>(<tr key={i}>
                   <td>{m.label}</td>
                   <td style={{textAlign:"right",fontWeight:600,color:m.to>=70?"var(--sage)":m.to>=45?"var(--taupe)":"#C77B6B"}} className="num">{pct(m.to)}</td>
                   <td style={{textAlign:"right"}} className="num">{eur2(m.adr)}</td>
