@@ -473,7 +473,7 @@ export default function App(){
   const [moisDetecte,setMoisDetecte]=useState(false);
   const [tauxIS,setTauxIS]=useState(25);
   // Magasin d'exercices : { exercices:{ "2025":{archived:false,months:[...]}, ... } }
-  const [store,setStore]=useState({exercices:{}});
+  const [store,setStore]=useState({exercices:{},hotel:{}});
   const [exYear,setExYear]=useState(String(now.getFullYear()));
   const [memOK,setMemOK]=useState(true);
   const MEMKEY="pilotage_store_v1";
@@ -654,7 +654,7 @@ export default function App(){
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
     a.download=`pilotage_sauvegarde.json`;a.click();
   };
-  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
+  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
   const exportAnnual=()=>{
     const cols=suivi.map(m=>m.label);
     const ncols=cols.length+2;
@@ -770,6 +770,65 @@ export default function App(){
       partInd:(ind+grp)?ind/(ind+grp)*100:0,
       meilleur:tri[0]||null, pire:tri[tri.length-1]||null};
   },[pms,chambres]);
+
+  /* ---- Suivi annuel hôtel (magasin séparé du financier) ---- */
+  const [hTab,setHTab]=useState("mois");
+  const [hExYear,setHExYear]=useState(String(now.getFullYear()));
+  const [hMetric,setHMetric]=useState("to");
+  const hStore=store.hotel||{};
+  const hList=Object.keys(hStore).sort();
+  const hSuivi=(hStore[hExYear]&&hStore[hExYear].months)||[];
+  const addHotelMonth=()=>{
+    if(!hotel||!pms)return;
+    const y=String(pms.annee);
+    const key=`${pms.annee}-${String(pms.mois).padStart(2,"0")}`;
+    const e={key,mois:pms.mois,annee:pms.annee,label:`${MOISC[pms.mois-1]} ${String(pms.annee).slice(2)}`,
+      cap:hotel.cap,jours:hotel.jours,vend:hotel.vend,dispo:hotel.dispo,rev:hotel.rev,
+      to:hotel.to,adr:hotel.adr,revpar:hotel.revpar,dms:hotel.dms,parCh:hotel.parCh,
+      arr:hotel.arr,pers:hotel.pers,hs:hotel.hs,ind:hotel.ind,grp:hotel.grp};
+    setStore(s=>{
+      const h={...(s.hotel||{})};
+      const prev=h[y]&&h[y].months?h[y].months.filter(x=>x.key!==key):[];
+      h[y]={months:[...prev,e].sort((a,b)=>a.key<b.key?-1:1)};
+      return {...s,hotel:h};
+    });
+    setHExYear(y);setHTab("annuel");
+  };
+  const removeHotelMonth=(key)=>setStore(s=>{
+    const h={...(s.hotel||{})};if(!h[hExYear])return s;
+    h[hExYear]={...h[hExYear],months:h[hExYear].months.filter(x=>x.key!==key)};
+    return {...s,hotel:h};
+  });
+  const deleteHotelYear=()=>{
+    if(!window.confirm(`Supprimer le suivi hôtel ${hExYear} et tous ses mois ?`))return;
+    setStore(s=>{const h={...(s.hotel||{})};delete h[hExYear];return {...s,hotel:h};});
+    const rest=Object.keys(hStore).filter(y=>y!==hExYear).sort();
+    setHExYear(rest.length?rest[rest.length-1]:String(now.getFullYear()));
+  };
+  const hCumul=useMemo(()=>{
+    if(!hSuivi.length)return null;
+    const S=(k)=>hSuivi.reduce((a,m)=>a+(m[k]||0),0);
+    const vend=S("vend"),dispo=S("dispo"),rev=S("rev"),arr=S("arr"),pers=S("pers"),hs=S("hs");
+    return {n:hSuivi.length,vend,dispo,rev,arr,pers,hs,
+      to:dispo?vend/dispo*100:0, adr:vend?rev/vend:0, revpar:dispo?rev/dispo:0,
+      dms:arr?vend/arr:0, parCh:vend?pers/vend:0,
+      curve:hSuivi.map(m=>({label:m.label,to:Math.round(m.to*10)/10,adr:Math.round(m.adr),revpar:Math.round(m.revpar)}))};
+  },[hSuivi]);
+  const hCmp=useMemo(()=>{
+    const years=Object.keys(hStore).sort();
+    if(!years.length)return null;
+    const rows=MOISC.map((mn,i)=>{
+      const cell={mois:mn};
+      years.forEach(y=>{const m=(hStore[y].months||[]).find(x=>x.mois===i+1);
+        cell[y]=m?Math.round(m[hMetric]*(hMetric==="to"?10:1))/(hMetric==="to"?10:1):null;});
+      return cell;
+    }).filter(r=>years.some(y=>r[y]!=null));
+    return {years,rows};
+  },[hStore,hMetric]);
+  const hMetricInfo={to:{lab:"Taux de remplissage",fmt:(v)=>pct(v),unit:"%"},
+    adr:{lab:"Prix moyen chambre (ADR)",fmt:(v)=>eur2(v),unit:"€"},
+    revpar:{lab:"Revenu par chambre (RevPAR)",fmt:(v)=>eur2(v),unit:"€"}};
+  const YCOL=["var(--sage)","var(--taupe)","#C77B6B","#7A8CA3","#B8935A"];
 
   /* ---- Export xlsx ---- */
   const exportXlsx=()=>{
@@ -1246,6 +1305,12 @@ export default function App(){
 
       {/* ========== HÔTEL ========== */}
       {tab==="hotel"&&<>
+        <div className="tabs" style={{marginBottom:16}}>
+          {[["mois",<BedDouble size={16}/>,"Mois"],["annuel",<Table2 size={16}/>,"Cumul annuel"],["comparatif",<ArrowLeftRight size={16}/>,"Comparatif"]].map(([k,ic,l])=>(
+            <button key={k} className={"tab"+(hTab===k?" on":"")} onClick={()=>setHTab(k)}>{ic} {l}</button>))}
+        </div>
+
+        {hTab==="mois"&&<>
         <div className="card"><h3>Fichier de réservation</h3>
           <p className="sub">Importez l'export de statistiques de votre logiciel de réservation. Le remplissage et les indicateurs sont calculés automatiquement, comme pour la balance et la caisse.</p>
           <DropZone onFile={onPms} name={pms?.name} onParsing={setParsingP} parsing={parsingP}
@@ -1253,7 +1318,7 @@ export default function App(){
           {pms?.error&&<div className="hint warn"><Info size={16}/><span>{pms.error}</span></div>}
         </div>
 
-        {hotel&&<>
+          {hotel&&<>
         <div className="card"><h3>Paramètres</h3>
           <div className="inline-fields">
             <div className="ifield"><label>Nombre de chambres</label>
@@ -1371,6 +1436,116 @@ export default function App(){
                 <td style={{textAlign:"right"}} className="num">{num(hotel.hs)}</td></tr>
             </tbody></table></div>
         </div>
+            <div className="card"><div className="toolbar" style={{marginBottom:0}}>
+              <button className="btn pri" onClick={addHotelMonth}><Plus size={14}/> Ajouter ce mois au suivi hôtel</button>
+              <span className="mini" style={{marginLeft:10}}>Enregistre {pms.periode} pour le cumul annuel et le comparatif.</span>
+            </div></div>
+          </>}
+        </>}
+
+        {hTab==="annuel"&&<>
+          <div className="card"><div className="toolbar" style={{marginBottom:0}}>
+            <div className="ifield" style={{minWidth:120}}><label>Saison</label>
+              <select value={hExYear} onChange={e=>setHExYear(e.target.value)}>
+                {(hList.length?hList:[hExYear]).map(y=><option key={y} value={y}>{y}</option>)}
+              </select></div>
+            <div style={{flex:1}}/>
+            {hSuivi.length>0&&<button className="btn ghost" onClick={deleteHotelYear} title="Supprimer cette saison" style={{color:"var(--red)"}}><Trash2 size={14}/></button>}
+          </div>
+          <p className="mini" style={{marginTop:12}}>{hSuivi.length} mois enregistré{hSuivi.length>1?"s":""}. Depuis l'onglet « Mois », importez un export puis cliquez « Ajouter ce mois au suivi hôtel ».</p>
+          </div>
+
+          {!hCumul ? <div className="card"><div className="hint"><CalendarDays size={16}/><span>Saison {hExYear} vide. Ajoutez des mois depuis l'onglet « Mois » — chacun viendra remplir le cumul et les courbes.</span></div></div>
+          : <>
+            <div className="kpi-grid" style={{marginBottom:16}}>
+              <div className="kpi"><div className="lab">Remplissage moyen</div><div className="val num" style={{color:"var(--sage)"}}>{pct(hCumul.to)}</div><div className="mini">{num(hCumul.vend)} / {num(hCumul.dispo)} nuitées · {hCumul.n} mois</div></div>
+              <div className="kpi"><div className="lab">ADR moyen</div><div className="val num">{eur2(hCumul.adr)}</div><div className="mini">prix moyen chambre</div></div>
+              <div className="kpi"><div className="lab">RevPAR moyen</div><div className="val num">{eur2(hCumul.revpar)}</div><div className="mini">revenu par chambre</div></div>
+              <div className="kpi"><div className="lab">Durée moyenne séjour</div><div className="val num">{hCumul.dms.toLocaleString("fr-FR",{maximumFractionDigits:2})}<small> nuits</small></div><div className="mini">{num(hCumul.arr)} arrivées</div></div>
+            </div>
+            <div className="card"><h3>Remplissage par mois</h3>
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={hCumul.curve} margin={{top:8,right:8,left:0,bottom:0}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
+                  <XAxis dataKey="label" tick={{fontSize:11,fill:"#7A7268"}}/>
+                  <YAxis tick={{fontSize:11,fill:"#7A7268"}} domain={[0,100]} tickFormatter={v=>v+"%"}/>
+                  <Tooltip formatter={v=>pct(v)} labelStyle={{fontWeight:700}}/>
+                  <Bar dataKey="to" name="Remplissage" radius={[4,4,0,0]}>
+                    {hCumul.curve.map((r,i)=><Cell key={i} fill={r.to>=70?"var(--sage)":r.to>=45?"var(--taupe)":"#C77B6B"}/>)}
+                  </Bar>
+                  <ReferenceLine y={hCumul.to} stroke="var(--ink)" strokeDasharray="4 3" label={{value:"Moy. "+pct(hCumul.to),position:"right",fontSize:10,fill:"var(--ink)"}}/>
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="card"><h3>Prix moyen (ADR) et revenu par chambre (RevPAR) par mois</h3>
+              <ResponsiveContainer width="100%" height={240}>
+                <LineChart data={hCumul.curve} margin={{top:8,right:12,left:0,bottom:0}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
+                  <XAxis dataKey="label" tick={{fontSize:11,fill:"#7A7268"}}/>
+                  <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+"€"}/>
+                  <Tooltip formatter={v=>eur2(v)} labelStyle={{fontWeight:700}}/>
+                  <Line type="monotone" dataKey="adr" name="ADR" stroke="var(--taupe)" strokeWidth={2.5} dot={{r:3}}/>
+                  <Line type="monotone" dataKey="revpar" name="RevPAR" stroke="var(--sage)" strokeWidth={2.5} dot={{r:3}}/>
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="legend"><span><i style={{background:"var(--taupe)"}}></i>ADR</span><span><i style={{background:"var(--sage)"}}></i>RevPAR</span></div>
+            </div>
+            <div className="card"><h3>Détail des mois</h3>
+              <div style={{overflowX:"auto"}}><table className="tbl">
+                <thead><tr><th>Mois</th><th style={{textAlign:"right"}}>Remplissage</th><th style={{textAlign:"right"}}>ADR</th><th style={{textAlign:"right"}}>RevPAR</th><th style={{textAlign:"right"}}>Nuitées</th><th></th></tr></thead>
+                <tbody>{hSuivi.map((m,i)=>(<tr key={i}>
+                  <td>{m.label}</td>
+                  <td style={{textAlign:"right",fontWeight:600,color:m.to>=70?"var(--sage)":m.to>=45?"var(--taupe)":"#C77B6B"}} className="num">{pct(m.to)}</td>
+                  <td style={{textAlign:"right"}} className="num">{eur2(m.adr)}</td>
+                  <td style={{textAlign:"right"}} className="num">{eur2(m.revpar)}</td>
+                  <td style={{textAlign:"right"}} className="num">{num(m.vend)}</td>
+                  <td style={{textAlign:"right"}}><span onClick={()=>removeHotelMonth(m.key)} title="Retirer ce mois" style={{cursor:"pointer",opacity:.7}}>✕</span></td>
+                </tr>))}</tbody>
+              </table></div>
+            </div>
+          </>}
+        </>}
+
+        {hTab==="comparatif"&&<>
+          <div className="card"><div className="toolbar" style={{marginBottom:0}}>
+            <div className="ifield" style={{minWidth:220}}><label>Indicateur comparé</label>
+              <select value={hMetric} onChange={e=>setHMetric(e.target.value)}>
+                <option value="to">Taux de remplissage</option>
+                <option value="adr">Prix moyen chambre (ADR)</option>
+                <option value="revpar">Revenu par chambre (RevPAR)</option>
+              </select></div>
+          </div>
+          <p className="mini" style={{marginTop:12}}>{hCmp&&hCmp.years.length>1 ? "Comparaison de "+hCmp.years.join(" · ")+", mois par mois." : "Ajoutez au moins deux saisons (onglet « Mois ») pour comparer une année sur l'autre."}</p>
+          </div>
+
+          {hCmp&&hCmp.rows.length>0&&<>
+            <div className="card"><h3>{hMetricInfo[hMetric].lab} — par mois</h3>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart data={hCmp.rows} margin={{top:8,right:12,left:0,bottom:0}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
+                  <XAxis dataKey="mois" tick={{fontSize:11,fill:"#7A7268"}}/>
+                  <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+hMetricInfo[hMetric].unit} domain={hMetric==="to"?[0,100]:["auto","auto"]}/>
+                  <Tooltip formatter={v=>hMetricInfo[hMetric].fmt(v)} labelStyle={{fontWeight:700}}/>
+                  {hCmp.years.map((y,i)=><Line key={y} type="monotone" dataKey={y} name={y} stroke={YCOL[i%YCOL.length]} strokeWidth={2.5} dot={{r:3}} connectNulls/>)}
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="legend">{hCmp.years.map((y,i)=><span key={y}><i style={{background:YCOL[i%YCOL.length]}}></i>{y}</span>)}</div>
+            </div>
+            <div className="card"><h3>Détail — {hMetricInfo[hMetric].lab}</h3>
+              <div style={{overflowX:"auto"}}><table className="tbl">
+                <thead><tr><th>Mois</th>{hCmp.years.map(y=><th key={y} style={{textAlign:"right"}}>{y}</th>)}{hCmp.years.length>1&&<th style={{textAlign:"right"}}>Écart {hCmp.years[0]}→{hCmp.years[hCmp.years.length-1]}</th>}</tr></thead>
+                <tbody>{hCmp.rows.map((r,i)=>{
+                  const oldY=hCmp.years[0], newY=hCmp.years[hCmp.years.length-1];
+                  const d=(r[oldY]!=null&&r[newY]!=null)?r[newY]-r[oldY]:null;
+                  return(<tr key={i}>
+                    <td>{r.mois}</td>
+                    {hCmp.years.map(y=><td key={y} style={{textAlign:"right"}} className="num">{r[y]!=null?hMetricInfo[hMetric].fmt(r[y]):"—"}</td>)}
+                    {hCmp.years.length>1&&<td style={{textAlign:"right",fontWeight:600,color:d==null?"#9a9a9a":d>=0?"var(--sage)":"#C77B6B"}} className="num">{d==null?"—":(d>=0?"+":"")+hMetricInfo[hMetric].fmt(d)}</td>}
+                  </tr>);
+                })}</tbody>
+              </table></div>
+            </div>
+          </>}
         </>}
       </>}
     </div></div>
