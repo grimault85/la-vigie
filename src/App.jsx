@@ -839,7 +839,7 @@ export default function App(){
   const hMetricInfo={to:{lab:"Taux de remplissage",fmt:(v)=>pct(v),unit:"%"},
     adr:{lab:"Prix moyen chambre (ADR)",fmt:(v)=>eur2(v),unit:"€"},
     revpar:{lab:"Revenu par chambre (RevPAR)",fmt:(v)=>eur2(v),unit:"€"}};
-  const YCOL=["var(--sage)","var(--taupe)","#C77B6B","#7A8CA3","#B8935A"];
+  const YCOL=["#8B9683","#B5A18E","#C77B6B","#7A8CA3","#B8935A"];
 
   /* ---- Export xlsx ---- */
   const exportXlsx=()=>{
@@ -1307,8 +1307,8 @@ export default function App(){
               <XAxis dataKey="label" tick={{fontSize:11,fill:"#7A7268"}}/>
               <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+"%"}/>
               <Tooltip formatter={v=>pct(v)} labelStyle={{fontWeight:700}}/>
-              <Line type="monotone" dataKey="val" name={RATIO_LABELS[curveRatio]} stroke="var(--sage)" strokeWidth={2.5}
-                dot={{r:3,fill:"var(--sage)"}} activeDot={{r:5}}/>
+              <Line type="monotone" dataKey="val" name={RATIO_LABELS[curveRatio]} stroke="#8B9683" strokeWidth={2.5}
+                dot={{r:3,fill:"#8B9683"}} activeDot={{r:5}}/>
             </LineChart>
           </ResponsiveContainer>
         </div>}
@@ -1383,10 +1383,10 @@ export default function App(){
               <YAxis tick={{fontSize:11,fill:"#7A7268"}} domain={[0,100]} tickFormatter={v=>v+"%"}/>
               <Tooltip formatter={v=>pct(v)} labelStyle={{fontWeight:700}}/>
               <Bar dataKey="to" name="Remplissage" radius={[4,4,0,0]}>
-                {hotel.rows.map((r,i)=><Cell key={i} fill={r.to>=70?"var(--sage)":r.to>=45?"var(--taupe)":"#C77B6B"}/>)}
+                {hotel.rows.map((r,i)=><Cell key={i} fill={r.to>=70?"#8B9683":r.to>=45?"#B5A18E":"#C77B6B"}/>)}
               </Bar>
-              <ReferenceLine y={hotel.to} stroke="var(--ink)" strokeDasharray="4 3"
-                label={{value:"Moy. "+pct(hotel.to),position:"right",fontSize:10,fill:"var(--ink)"}}/>
+              <ReferenceLine y={hotel.to} stroke="#2B2B2B" strokeDasharray="4 3"
+                label={{value:"Moy. "+pct(hotel.to),position:"right",fontSize:10,fill:"#2B2B2B"}}/>
             </ComposedChart>
           </ResponsiveContainer>
           <div className="legend"><span><i style={{background:"var(--sage)"}}></i>&ge; 70 %</span>
@@ -1406,7 +1406,7 @@ export default function App(){
               <YAxis tick={{fontSize:11,fill:"#7A7268"}} domain={[0,100]} tickFormatter={v=>v+"%"}/>
               <Tooltip formatter={v=>pct(v)} labelStyle={{fontWeight:700}}/>
               <Bar dataKey="to" name="Remplissage moyen" radius={[5,5,0,0]}>
-                {hotel.semaine.map((r,i)=><Cell key={i} fill={r.to>=70?"var(--sage)":r.to>=45?"var(--taupe)":"#C77B6B"}/>)}
+                {hotel.semaine.map((r,i)=><Cell key={i} fill={r.to>=70?"#8B9683":r.to>=45?"#B5A18E":"#C77B6B"}/>)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -1422,7 +1422,7 @@ export default function App(){
                 <td>{r.label}{r.prev&&<span className="mini" style={{marginLeft:6,color:"var(--taupe)"}}>à venir</span>}</td><td className="mini">{JSEM[r.jsem]}</td>
                 <td style={{textAlign:"right"}} className="num">{num(r.occ)}</td>
                 <td style={{textAlign:"right",fontWeight:600,
-                  color:r.to>=70?"var(--sage)":r.to>=45?"var(--taupe)":"#C77B6B"}} className="num">{pct(r.to)}</td>
+                  color:r.to>=70?"#8B9683":r.to>=45?"#B5A18E":"#C77B6B"}} className="num">{pct(r.to)}</td>
                 <td style={{textAlign:"right"}} className="num">{num(r.arr)}</td>
                 <td style={{textAlign:"right"}} className="num">{num(r.pers)}</td>
                 <td style={{textAlign:"right"}} className="num">{r.hs?num(r.hs):"—"}</td>
@@ -1481,9 +1481,9 @@ export default function App(){
                   <YAxis tick={{fontSize:11,fill:"#7A7268"}} domain={[0,100]} tickFormatter={v=>v+"%"}/>
                   <Tooltip formatter={v=>pct(v)} labelStyle={{fontWeight:700}}/>
                   <Bar dataKey="to" name="Remplissage" radius={[4,4,0,0]}>
-                    {hCumul.curve.map((r,i)=><Cell key={i} fill={r.to>=70?"var(--sage)":r.to>=45?"var(--taupe)":"#C77B6B"}/>)}
+                    {hCumul.curve.map((r,i)=><Cell key={i} fill={r.to>=70?"#8B9683":r.to>=45?"#B5A18E":"#C77B6B"}/>)}
                   </Bar>
-                  <ReferenceLine y={hCumul.to} stroke="var(--ink)" strokeDasharray="4 3" label={{value:"Moy. "+pct(hCumul.to),position:"right",fontSize:10,fill:"var(--ink)"}}/>
+                  <ReferenceLine y={hCumul.to} stroke="#2B2B2B" strokeDasharray="4 3" label={{value:"Moy. "+pct(hCumul.to),position:"right",fontSize:10,fill:"#2B2B2B"}}/>
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
@@ -1494,8 +1494,8 @@ export default function App(){
                   <XAxis dataKey="label" tick={{fontSize:11,fill:"#7A7268"}}/>
                   <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+"€"}/>
                   <Tooltip formatter={v=>eur2(v)} labelStyle={{fontWeight:700}}/>
-                  <Line type="monotone" dataKey="adr" name="ADR" stroke="var(--taupe)" strokeWidth={2.5} dot={{r:3}}/>
-                  <Line type="monotone" dataKey="revpar" name="RevPAR" stroke="var(--sage)" strokeWidth={2.5} dot={{r:3}}/>
+                  <Line type="monotone" dataKey="adr" name="ADR" stroke="#B5A18E" strokeWidth={2.5} dot={{r:3}}/>
+                  <Line type="monotone" dataKey="revpar" name="RevPAR" stroke="#8B9683" strokeWidth={2.5} dot={{r:3}}/>
                 </LineChart>
               </ResponsiveContainer>
               <div className="legend"><span><i style={{background:"var(--taupe)"}}></i>ADR</span><span><i style={{background:"var(--sage)"}}></i>RevPAR</span></div>
