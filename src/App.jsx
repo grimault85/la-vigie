@@ -1401,18 +1401,6 @@ export default function App(){
           </ResponsiveContainer>
         </div>
 
-        {(hotel.ind+hotel.grp)>0&&<div className="card"><h3>Origine des réservations</h3>
-          <p className="sub">Répartition entre clientèle individuelle et groupes.</p>
-          <div className="kpi-grid">
-            <div className="kpi"><div className="lab">Individuels</div>
-              <div className="val num">{pct(hotel.partInd)}</div>
-              <div className="mini">{num(hotel.ind)} nuitées</div></div>
-            <div className="kpi"><div className="lab">Groupes</div>
-              <div className="val num">{pct(100-hotel.partInd)}</div>
-              <div className="mini">{num(hotel.grp)} nuitées</div></div>
-          </div>
-        </div>}
-
         <div className="card"><h3>Détail des journées</h3>
           <div style={{overflowX:"auto"}}><table className="tbl">
             <thead><tr><th>Date</th><th>Jour</th><th style={{textAlign:"right"}}>Chambres occupées</th>
