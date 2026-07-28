@@ -273,6 +273,14 @@ function jaliaCategory(parent){
   if(has("plat","dessert","entrée","entree","fromage","menu","garniture","poisson","viande","tapas","planche","pizza","burger","salade","formule","brunch","sandwich","frites")) return "resto";
   return "autres"; // défaut : famille non reconnue → Autres/Divers (jamais noyée dans Restauration)
 }
+function parseJaliaPeriode(name){
+  // Export Jalia : ..._AAAAMMJJ_AAAAMMJJ_...  → mois (0-indexé) et année du début de plage
+  const m=/[_-](\d{4})(\d{2})(\d{2})[_-](\d{4})(\d{2})(\d{2})/.exec(String(name||""));
+  if(!m)return null;
+  const mo=parseInt(m[2],10), an=parseInt(m[1],10);
+  if(mo<1||mo>12)return null;
+  return {mois:mo-1,annee:an};
+}
 function parseJalia(d){
   const iP=guessCol(d.headers,["parent"]);
   const iHT=guessCol(d.headers,["ht"]);
@@ -288,7 +296,7 @@ function parseJalia(d){
   });
   Object.keys(cats).forEach(k=>cats[k]=Math.round(cats[k]*100)/100);
   const total=Math.round(Object.values(cats).reduce((a,b)=>a+b,0)*100)/100;
-  return {ok:true,cats,total,families:Object.entries(fam).map(([parent,v])=>({parent,ht:Math.round(v.ht*100)/100,cat:v.cat})).sort((a,b)=>b.ht-a.ht)};
+  return {ok:true,cats,total,periode:parseJaliaPeriode(d.name),families:Object.entries(fam).map(([parent,v])=>({parent,ht:Math.round(v.ht*100)/100,cat:v.cat})).sort((a,b)=>b.ht-a.ht)};
 }
 
 /* --- Lecture d'un export de statistiques du logiciel de réservation (une ligne par jour) --- */
@@ -549,6 +557,8 @@ export default function App(){
 
   // CA ventilé : bar/resto/événement depuis Jalia si dispo, sinon balance ; hôtel/petit déj depuis la balance
   const J=jalia&&!jalia.error?jalia.cats:null;
+  const caissePeriode=jalia&&!jalia.error?jalia.periode:null;
+  const caisseMemePeriode=(caissePeriode&&moisDetecte)?(caissePeriode.mois===mois&&caissePeriode.annee===annee):null;
   const caResto=g("ca_resto",J?J.resto:B.ca);
   const caBar=g("ca_bar",J?J.bar:0);
   const caHotel=g("ca_hotel",B.ca_hotel);
@@ -1045,6 +1055,12 @@ export default function App(){
             what="l'export caisse (.xlsx)"
             hint="Export statistiques Jalia (.xlsx) avec colonnes parent / HT"/>
           {jalia&&jalia.error&&<div className="hint warn" style={{marginTop:12}}><Info size={16}/><span>{jalia.error}</span></div>}
+          {caisseMemePeriode===false&&<div className="hint warn" style={{marginTop:12}}><Info size={16}/>
+            <span><b>Périodes différentes :</b> la caisse importée porte sur <b>{MOIS[caissePeriode.mois]} {caissePeriode.annee}</b>, alors que la balance est sur <b>{MOIS[mois]} {annee}</b>. Le rapprochement mélangerait deux mois — vérifiez que les deux fichiers couvrent la même période.</span></div>}
+          {caisseMemePeriode===true&&<div className="hint" style={{marginTop:12}}><Info size={16}/>
+            <span>Caisse et balance sur la même période : <b>{MOIS[mois]} {annee}</b>.</span></div>}
+          {jalia&&!jalia.error&&!caissePeriode&&moisDetecte&&<div className="hint" style={{marginTop:12}}><Info size={16}/>
+            <span>Impossible de lire la période dans le nom du fichier caisse — vérifiez vous-même qu'il couvre bien {MOIS[mois]} {annee} (la période de la balance).</span></div>}
           {jalia&&!jalia.error&&<>
             <table className="tbl" style={{marginTop:14}}>
               <thead><tr><th>Famille</th><th>Catégorie</th><th>CA HT</th></tr></thead>
