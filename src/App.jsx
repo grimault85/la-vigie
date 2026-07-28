@@ -556,9 +556,14 @@ export default function App(){
   const B=auto.b;
 
   // CA ventilé : bar/resto/événement depuis Jalia si dispo, sinon balance ; hôtel/petit déj depuis la balance
-  const J=jalia&&!jalia.error?jalia.cats:null;
   const caissePeriode=jalia&&!jalia.error?jalia.periode:null;
   const caisseMemePeriode=(caissePeriode&&moisDetecte)?(caissePeriode.mois===mois&&caissePeriode.annee===annee):null;
+  // Caisse "vide" (mois de fermeture) : caisse ≈ 0 alors que la balance porte du bar-resto/événements.
+  // On repasse alors sur le compta pour ne pas afficher un CA faux (et jamais négatif par oubli du compta).
+  const compta70=B.ca+B.ca_evt;
+  const caisseTotal=jalia&&!jalia.error?(jalia.total||0):0;
+  const jaliaVide=jalia&&!jalia.error&&Math.abs(compta70)>100&&caisseTotal<0.01*Math.abs(compta70);
+  const J=(jalia&&!jalia.error&&!jaliaVide)?jalia.cats:null;
   const caResto=g("ca_resto",J?J.resto:B.ca);
   const caBar=g("ca_bar",J?J.bar:0);
   const caHotel=g("ca_hotel",B.ca_hotel);
@@ -1061,7 +1066,9 @@ export default function App(){
             <span>Caisse et balance sur la même période : <b>{MOIS[mois]} {annee}</b>.</span></div>}
           {jalia&&!jalia.error&&!caissePeriode&&moisDetecte&&<div className="hint" style={{marginTop:12}}><Info size={16}/>
             <span>Impossible de lire la période dans le nom du fichier caisse — vérifiez vous-même qu'il couvre bien {MOIS[mois]} {annee} (la période de la balance).</span></div>}
-          {jalia&&!jalia.error&&<>
+          {jaliaVide&&<div className="hint warn" style={{marginTop:12}}><Info size={16}/>
+            <span><b>Caisse vide</b> ({eur2(caisseTotal)}) alors que la balance porte <b>{eur2(compta70)}</b> de CA bar-restaurant / événements — probablement un <b>mois de fermeture</b>. Pour ne pas afficher un CA faux, ces postes sont <b>repris de la balance</b> pour ce mois (l'hôtel et le petit-déj le sont toujours).</span></div>}
+          {jalia&&!jalia.error&&!jaliaVide&&<>
             <table className="tbl" style={{marginTop:14}}>
               <thead><tr><th>Famille</th><th>Catégorie</th><th>CA HT</th></tr></thead>
               <tbody>
