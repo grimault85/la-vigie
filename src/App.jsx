@@ -1494,8 +1494,8 @@ export default function App(){
                   <XAxis dataKey="label" tick={{fontSize:11,fill:"#7A7268"}}/>
                   <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+"€"}/>
                   <Tooltip formatter={v=>eur2(v)} labelStyle={{fontWeight:700}}/>
-                  <Line type="monotone" dataKey="adr" name="ADR" stroke="#B5A18E" strokeWidth={2.5} dot={{r:3}}/>
-                  <Line type="monotone" dataKey="revpar" name="RevPAR" stroke="#8B9683" strokeWidth={2.5} dot={{r:3}}/>
+                  <Line type="monotone" dataKey="adr" name="ADR" stroke="#B5A18E" strokeWidth={2.5} dot={{r:4,fill:"#B5A18E",stroke:"#fff",strokeWidth:1}} isAnimationActive={false}/>
+                  <Line type="monotone" dataKey="revpar" name="RevPAR" stroke="#8B9683" strokeWidth={2.5} dot={{r:4,fill:"#8B9683",stroke:"#fff",strokeWidth:1}} isAnimationActive={false}/>
                 </LineChart>
               </ResponsiveContainer>
               <div className="legend"><span><i style={{background:"var(--taupe)"}}></i>ADR</span><span><i style={{background:"var(--sage)"}}></i>RevPAR</span></div>
@@ -1536,7 +1536,7 @@ export default function App(){
                   <XAxis dataKey="mois" tick={{fontSize:11,fill:"#7A7268"}}/>
                   <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+hMetricInfo[hMetric].unit} domain={hMetric==="to"?[0,100]:["auto","auto"]}/>
                   <Tooltip formatter={v=>hMetricInfo[hMetric].fmt(v)} labelStyle={{fontWeight:700}}/>
-                  {hCmp.years.map((y,i)=><Line key={y} type="monotone" dataKey={y} name={y} stroke={YCOL[i%YCOL.length]} strokeWidth={2.5} dot={{r:3}} connectNulls/>)}
+                  {hCmp.years.map((y,i)=><Line key={y} type="monotone" dataKey={y} name={y} stroke={YCOL[i%YCOL.length]} strokeWidth={2.5} dot={{r:4,fill:YCOL[i%YCOL.length],stroke:"#fff",strokeWidth:1}} isAnimationActive={false} connectNulls/>)}
                 </LineChart>
               </ResponsiveContainer>
               <div className="legend">{hCmp.years.map((y,i)=><span key={y}><i style={{background:YCOL[i%YCOL.length]}}></i>{y}</span>)}</div>
