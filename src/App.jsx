@@ -608,6 +608,7 @@ export default function App(){
   const LIGNES=[
     ["ca_resto","CA Restauration",caResto],["ca_bar","CA Bar",caBar],["ca_hotel","CA Hôtel",caHotel],
     ["ca_pdej","CA Petit déjeuner",caPdej],["ca_evt","CA Événements",caEvt],["ca_autres","CA Autres / Divers",caAutres],["CA","TOTAL CA HT",CA,"sub"],
+    ["autres_produits","Autres produits d'exploitation",P.autres_produits],
     ["matieres","Matières premières",P.matieres],["conso_var","Consommables variables",P.conso_var],
     ["comm_var","Commissions plateformes",P.comm_var],["cb_var","Frais bancaires variables",P.cb_var],
     ["pub","Publicité",P.pub],["CV","TOTAL CHARGES VARIABLES",CV,"sub"],
@@ -623,7 +624,8 @@ export default function App(){
     ["CF","TOTAL CHARGES FIXES",CF,"sub"],
     ["EBE","EBE",EBE,"res"],["dotations","Dotations amortissements",P.dotations],
     ["RES_EXPL","Résultat d'exploitation",RES_EXPL,"sub"],
-    ["charges_fin","Charges financières",P.charges_fin],["charges_except","Charges exceptionnelles",P.charges_except],
+    ["prod_fin","Produits financiers",P.prod_fin],["charges_fin","Charges financières",P.charges_fin],
+    ["prod_except","Produits exceptionnels",P.prod_except],["charges_except","Charges exceptionnelles",P.charges_except],
     ["RAI","Résultat avant impôt",RAI,"sub"],["IS","Impôt sur les sociétés",-IS],
     ["RN","RÉSULTAT NET",RN,"res"],
   ];
@@ -1109,6 +1111,9 @@ export default function App(){
             <Row k="ca_autres" label="CA Autres / Divers" cpt={J?"caisse":"—"} auto={caAutres}/>
             <Line label="TOTAL CA HT" v={CA} cls="sub"/>
 
+            <tr className="sec"><td colSpan={3}>Autres produits d'exploitation</td></tr>
+            <Row k="autres_produits" label="Autres produits (avantages en nature, subventions, divers…)" cpt="74·75·78" auto={P.autres_produits}/>
+
             <tr className="sec"><td colSpan={3}>Charges variables HT</td></tr>
             <Row k="matieres" label="Matières premières" cpt="601·602·607" auto={P.matieres}/>
             <Row k="conso_var" label="Consommables variables" cpt="606·624" auto={P.conso_var}/>
@@ -1146,7 +1151,9 @@ export default function App(){
             <Line label="Excédent brut d'exploitation (EBE)" v={EBE}/>
             <Row k="dotations" label="Dotations aux amortissements" cpt="68" auto={P.dotations}/>
             <Line label="Résultat d'exploitation" v={RES_EXPL} cls="sub"/>
+            <Row k="prod_fin" label="Produits financiers" cpt="76" auto={P.prod_fin}/>
             <Row k="charges_fin" label="Charges financières (intérêts…)" cpt="66" auto={P.charges_fin}/>
+            <Row k="prod_except" label="Produits exceptionnels" cpt="77" auto={P.prod_except}/>
             <Row k="charges_except" label="Charges exceptionnelles" cpt="67" auto={P.charges_except}/>
             <Line label="Résultat avant impôt" v={RAI} cls="sub"/>
             <Line label={`Impôt sur les sociétés (${tauxIS} %)`} v={-IS}/>
