@@ -396,6 +396,7 @@ function classify(cptRaw){
   if(is("66"))return "charges_fin";
   if(is("67"))return "charges_except";
   if(is("68"))return "dotations";
+  if(is("6"))return "autres_charges"; // filet : tout compte de charge (classe 6) non reconnu (604,605,611,612,621…) — aucune charge n'est perdue
   return null; // classes 1-5 (bilan) ignorées
 }
 
@@ -526,7 +527,7 @@ export default function App(){
       loyer:0,autres_loc:0,entretien:0,assurances:0,energie:0,divers_fixe:0,honoraires:0,
       telecom:0,bq_fixe:0,deplacements:0,impots_fixe:0,autres_gc:0,
       salaires:0,urssaf:0,mutuelle:0,retraite:0,autres_orgs:0,taxes_sal:0,
-      dotations:0,charges_fin:0,charges_except:0,ca:0,ca_hotel:0,ca_petitdej:0,ca_evt:0,autres_produits:0,prod_fin:0,prod_except:0};
+      dotations:0,autres_charges:0,charges_fin:0,charges_except:0,ca:0,ca_hotel:0,ca_petitdej:0,ca_evt:0,autres_produits:0,prod_fin:0,prod_except:0};
     let ignored=0,classified=0;
     if(bal&&bal.source==="pdf"){
       (bal.parsed||[]).forEach(r=>{
@@ -579,11 +580,11 @@ export default function App(){
   ["matieres","conso_var","comm_var","cb_var","pub","loyer","autres_loc","entretien","assurances",
    "energie","divers_fixe","honoraires","telecom","bq_fixe","deplacements","impots_fixe","autres_gc",
    "salaires","urssaf","mutuelle","retraite","autres_orgs","taxes_sal","dotations","charges_fin",
-   "charges_except","autres_produits","prod_fin","prod_except"].forEach(k=>P[k]=g(k,B[k]));
+   "charges_except","autres_charges","autres_produits","prod_fin","prod_except"].forEach(k=>P[k]=g(k,B[k]));
 
   const CV=P.matieres+P.conso_var+P.comm_var+P.cb_var+P.pub;
   const CF_autres=P.loyer+P.autres_loc+P.entretien+P.assurances+P.energie+P.divers_fixe+P.honoraires
-    +P.telecom+P.bq_fixe+P.deplacements+P.impots_fixe+P.autres_gc;
+    +P.telecom+P.bq_fixe+P.deplacements+P.impots_fixe+P.autres_gc+P.autres_charges;
   const MS=P.salaires+P.urssaf+P.mutuelle+P.retraite+P.autres_orgs+P.taxes_sal;
   const CF=CF_autres+MS;
   const EBE=CA+P.autres_produits-CV-CF_autres-MS;
@@ -598,7 +599,7 @@ export default function App(){
   const autoProduits=B.ca+B.ca_hotel+B.ca_petitdej+B.ca_evt+B.autres_produits+B.prod_fin+B.prod_except;
   const autoCharges=B.matieres+B.conso_var+B.comm_var+B.cb_var+B.pub+B.loyer+B.autres_loc+B.entretien
     +B.assurances+B.energie+B.divers_fixe+B.honoraires+B.telecom+B.bq_fixe+B.deplacements+B.impots_fixe
-    +B.autres_gc+B.salaires+B.urssaf+B.mutuelle+B.retraite+B.autres_orgs+B.taxes_sal+B.dotations
+    +B.autres_gc+B.autres_charges+B.salaires+B.urssaf+B.mutuelle+B.retraite+B.autres_orgs+B.taxes_sal+B.dotations
     +B.charges_fin+B.charges_except;
   const autoRAI=Math.round((autoProduits-autoCharges)*100)/100;
   const control=(bal&&bal.source==="pdf"&&bal.control!=null)?bal.control:null;
@@ -617,7 +618,7 @@ export default function App(){
     ["energie","Énergie",P.energie],["divers_fixe","Documentation / divers",P.divers_fixe],
     ["honoraires","Honoraires",P.honoraires],["telecom","Télécom / Internet",P.telecom],
     ["bq_fixe","Frais bancaires fixes",P.bq_fixe],["deplacements","Déplacements / réceptions",P.deplacements],
-    ["impots_fixe","Impôts & taxes",P.impots_fixe],["autres_gc","Autres charges gestion courante",P.autres_gc],
+    ["impots_fixe","Impôts & taxes",P.impots_fixe],["autres_gc","Autres charges gestion courante",P.autres_gc],["autres_charges","Autres charges d'exploitation",P.autres_charges],
     ["salaires","Salaires bruts",P.salaires],["urssaf","URSSAF",P.urssaf],["retraite","Retraite",P.retraite],
     ["mutuelle","Mutuelle / prévoyance",P.mutuelle],["autres_orgs","Autres organismes",P.autres_orgs],
     ["taxes_sal","Taxes sur salaires",P.taxes_sal],["MS","Masse salariale",MS,"sub"],
@@ -1135,6 +1136,7 @@ export default function App(){
             <Row k="deplacements" label="Déplacements / réceptions" cpt="625" auto={P.deplacements}/>
             <Row k="impots_fixe" label="Impôts & taxes (hors IS)" cpt="635·637" auto={P.impots_fixe}/>
             <Row k="autres_gc" label="Autres charges de gestion courante" cpt="65" auto={P.autres_gc}/>
+            <Row k="autres_charges" label="Autres charges d'exploitation" cpt="604·605·611·612…" auto={P.autres_charges}/>
             <Line label="Sous-total autres charges fixes" v={CF_autres} cls="sub"/>
 
             <tr className="sec"><td colSpan={3}>Masse salariale & charges sociales</td></tr>
