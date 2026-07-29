@@ -61,7 +61,7 @@ const css = `
 .pnl td{padding:6px 10px;border-bottom:1px solid #F0EBE3}
 .pnl td.lbl{color:var(--ink)}
 .pnl td.cpt{font-size:11px;color:var(--taupe);white-space:nowrap;font-weight:700}
-.pnl td.amt{text-align:right;width:150px}
+.pnl td.amt{text-align:right;width:150px;white-space:nowrap}
 .pnl td.amt input{text-align:right;padding:6px 9px}
 .pnl tr.sec td{background:var(--sage);color:#fff;font:700 11px 'Lato';text-transform:uppercase;letter-spacing:.1em;padding:8px 10px;border:0}
 .pnl tr.sub td{font-weight:700;background:var(--taupe-soft);border-top:1px solid var(--taupe)}
@@ -1209,7 +1209,7 @@ export default function App(){
               <table className="pnl" style={{minWidth:520}}><tbody>
                 <tr className="sec">
                   <td style={{position:"sticky",left:0}}>Poste</td>
-                  {suivi.map(m=>(<td key={m.key} style={{textAlign:"right",textTransform:"none",letterSpacing:0}}>
+                  {suivi.map(m=>(<td key={m.key} style={{textAlign:"right",textTransform:"none",letterSpacing:0,whiteSpace:"nowrap"}}>
                     {m.label}
                     {!archived&&<span onClick={()=>removeMonth(m.key)} title="Retirer ce mois"
                       style={{cursor:"pointer",marginLeft:6,opacity:.8}}>✕</span>}
