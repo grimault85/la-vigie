@@ -11,7 +11,7 @@ try {
 } catch (e) { /* worker fallback géré au parsing */ }
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart, ReferenceLine, Cell, LineChart, Line,
+  ComposedChart, ReferenceLine, Cell, LineChart, Line as RLine,
 } from "recharts";
 import {
   Upload, FileSpreadsheet, Activity, BedDouble, Coins, Info, Users,
@@ -841,7 +841,7 @@ export default function App(){
       vend,dispo,rev,arr,pers,hs,
       to:dispo?vend/dispo*100:0, adr:vend?rev/vend:0, revpar:dispo?rev/dispo:0,
       dms:arr?vend/arr:0, parCh:vend?pers/vend:0,
-      curve:sel.map(m=>({label:m.label,to:Math.round(m.to*10)/10,adr:Math.round(m.adr),revpar:Math.round(m.revpar)}))};
+      curve:(()=>{const cc=sel.map(m=>({label:m.label,to:Math.round(m.to*10)/10,adr:Math.round(m.adr),revpar:Math.round(m.revpar)}));if(typeof window!=="undefined")window.__CURVE=cc;return cc;})()};
   },[hSuivi,hFrom,hTo,hAvail]);
   const hCmp=useMemo(()=>{
     const years=Object.keys(hStore).sort();
@@ -1334,14 +1334,14 @@ export default function App(){
                 className={"btn "+(curveRatio===k?"pri":"ghost")} style={{padding:"7px 12px"}}>{RATIO_LABELS[k]}</button>))}
           </div>
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={curveData} margin={{top:8,right:12,left:0,bottom:0}}>
+            <ComposedChart data={curveData} margin={{top:8,right:12,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
               <XAxis dataKey="label" tick={{fontSize:11,fill:"#7A7268"}}/>
               <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+"%"}/>
               <Tooltip formatter={v=>pct(v)} labelStyle={{fontWeight:700}}/>
-              <Line type="monotone" dataKey="val" name={RATIO_LABELS[curveRatio]} stroke="#8B9683" strokeWidth={2.5}
+              <RLine type="monotone" dataKey="val" name={RATIO_LABELS[curveRatio]} stroke="#8B9683" strokeWidth={2.5}
                 dot={{r:3,fill:"#8B9683"}} activeDot={{r:5}}/>
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>}
       </>}
@@ -1521,14 +1521,14 @@ export default function App(){
             </div>
             <div className="card"><h3>Prix moyen (ADR) et revenu par chambre (RevPAR) par mois</h3>
               <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={hCumul.curve} margin={{top:8,right:12,left:0,bottom:0}}>
+                <ComposedChart data={hCumul.curve} margin={{top:8,right:12,left:0,bottom:0}}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
                   <XAxis dataKey="label" tick={{fontSize:11,fill:"#7A7268"}}/>
                   <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+"€"}/>
                   <Tooltip formatter={v=>eur2(v)} labelStyle={{fontWeight:700}}/>
-                  <Line type="monotone" dataKey="adr" name="ADR" stroke="#B5A18E" strokeWidth={2.5} dot={{r:4,fill:"#B5A18E",stroke:"#fff",strokeWidth:1}} isAnimationActive={false}/>
-                  <Line type="monotone" dataKey="revpar" name="RevPAR" stroke="#8B9683" strokeWidth={2.5} dot={{r:4,fill:"#8B9683",stroke:"#fff",strokeWidth:1}} isAnimationActive={false}/>
-                </LineChart>
+                  <RLine type="monotone" dataKey="adr" name="ADR" stroke="#B5A18E" strokeWidth={2.5} dot={{r:4,fill:"#B5A18E",stroke:"#fff",strokeWidth:1}} isAnimationActive={false}/>
+                  <RLine type="monotone" dataKey="revpar" name="RevPAR" stroke="#8B9683" strokeWidth={2.5} dot={{r:4,fill:"#8B9683",stroke:"#fff",strokeWidth:1}} isAnimationActive={false}/>
+                </ComposedChart>
               </ResponsiveContainer>
               <div className="legend"><span><i style={{background:"var(--taupe)"}}></i>ADR</span><span><i style={{background:"var(--sage)"}}></i>RevPAR</span></div>
             </div>
@@ -1563,13 +1563,13 @@ export default function App(){
           {hCmp&&hCmp.rows.length>0&&<>
             <div className="card"><h3>{hMetricInfo[hMetric].lab} — par mois</h3>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={hCmp.rows} margin={{top:8,right:12,left:0,bottom:0}}>
+                <ComposedChart data={hCmp.rows} margin={{top:8,right:12,left:0,bottom:0}}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
                   <XAxis dataKey="mois" tick={{fontSize:11,fill:"#7A7268"}}/>
                   <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+hMetricInfo[hMetric].unit} domain={hMetric==="to"?[0,100]:["auto","auto"]}/>
                   <Tooltip formatter={v=>hMetricInfo[hMetric].fmt(v)} labelStyle={{fontWeight:700}}/>
-                  {hCmp.years.map((y,i)=><Line key={y} type="monotone" dataKey={y} name={y} stroke={YCOL[i%YCOL.length]} strokeWidth={2.5} dot={{r:4,fill:YCOL[i%YCOL.length],stroke:"#fff",strokeWidth:1}} isAnimationActive={false} connectNulls/>)}
-                </LineChart>
+                  {hCmp.years.map((y,i)=><RLine key={y} type="monotone" dataKey={y} name={y} stroke={YCOL[i%YCOL.length]} strokeWidth={2.5} dot={{r:4,fill:YCOL[i%YCOL.length],stroke:"#fff",strokeWidth:1}} isAnimationActive={false} connectNulls/>)}
+                </ComposedChart>
               </ResponsiveContainer>
               <div className="legend">{hCmp.years.map((y,i)=><span key={y}><i style={{background:YCOL[i%YCOL.length]}}></i>{y}</span>)}</div>
             </div>
