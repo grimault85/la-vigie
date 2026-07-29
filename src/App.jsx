@@ -589,6 +589,13 @@ export default function App(){
   const CF=CF_autres+MS;
   const EBE=CA+P.autres_produits-CV-CF_autres-MS;
   const RES_EXPL=EBE-P.dotations;
+  // Seuil de rentabilité : CA à atteindre pour que le résultat d'exploitation soit nul
+  const MCV=CA-CV;                                   // marge sur coûts variables (€)
+  const tauxMCV=CA>0?MCV/CA:0;                       // part de chaque euro de vente qui reste après coûts variables
+  const chargesFixesTot=CF_autres+MS+P.dotations;    // charges fixes d'exploitation
+  const seuilRenta=(tauxMCV>0)?chargesFixesTot/tauxMCV:null;  // seuil de rentabilité (CA HT)
+  const margeSecurite=(seuilRenta!=null&&CA>0)?CA-seuilRenta:null; // écart au seuil (€)
+  const tauxMargeSecurite=(seuilRenta!=null&&CA>0)?(CA-seuilRenta)/CA*100:null;
   const RES_FIN=P.prod_fin-P.charges_fin;
   const RES_EXC=P.prod_except-P.charges_except;
   const RAI=RES_EXPL+RES_FIN+RES_EXC;
@@ -841,7 +848,7 @@ export default function App(){
       vend,dispo,rev,arr,pers,hs,
       to:dispo?vend/dispo*100:0, adr:vend?rev/vend:0, revpar:dispo?rev/dispo:0,
       dms:arr?vend/arr:0, parCh:vend?pers/vend:0,
-      curve:(()=>{const cc=sel.map(m=>({label:m.label,to:Math.round(m.to*10)/10,adr:Math.round(m.adr),revpar:Math.round(m.revpar)}));if(typeof window!=="undefined")window.__CURVE=cc;return cc;})()};
+      curve:sel.map(m=>({label:m.label,to:Math.round(m.to*10)/10,adr:Math.round(m.adr),revpar:Math.round(m.revpar)}))};
   },[hSuivi,hFrom,hTo,hAvail]);
   const hCmp=useMemo(()=>{
     const years=Object.keys(hStore).sort();
@@ -1172,9 +1179,26 @@ export default function App(){
           <div className="hint"><Info size={16}/>
             <span>Restauration / Bar / Événements / Autres viennent de la caisse Jalia si importée (sinon à saisir) ; Hôtel et Petit déj de la balance. Chaque ligne reste modifiable, et les ratios utilisent le CA total.</span></div>
         </div>
-      </>}
 
-      {/* ========== TABLEAU ANNUEL ========== */}
+        {seuilRenta!=null&&<div className="card">
+          <h3>Seuil de rentabilité</h3>
+          <div className="kpi-grid" style={{marginBottom:12}}>
+            <div className="kpi"><div className="lab">Seuil de rentabilité (CA à atteindre)</div>
+              <div className="val num" style={{color:"var(--ink)"}}>{eur(seuilRenta)}</div>
+              <div className="mini">de chiffre d'affaires HT sur le mois</div></div>
+            <div className="kpi"><div className="lab">Votre CA du mois</div>
+              <div className="val num">{eur(CA)}</div>
+              <div className="mini">{margeSecurite>=0?"au-dessus du seuil":"en dessous du seuil"}</div></div>
+            <div className="kpi"><div className="lab">Marge de sécurité</div>
+              <div className="val num" style={{color:margeSecurite>=0?"var(--sage)":"#C77B6B"}}>{margeSecurite>=0?"+":""}{eur(margeSecurite)}</div>
+              <div className="mini">{tauxMargeSecurite>=0?"+":""}{pct(tauxMargeSecurite)} vs le seuil</div></div>
+          </div>
+          <div className="hint"><Info size={16}/>
+            <span><b>Ce que ça veut dire :</b> sur chaque euro vendu, une fois payés les coûts qui varient avec l'activité (matières, commissions…), il reste <b>{pct(tauxMCV*100)}</b> pour couvrir vos charges fixes (loyer, salaires, assurances…). Il vous faut donc <b>{eur(seuilRenta)}</b> de ventes pour couvrir ces {eur(chargesFixesTot)} de charges fixes : en dessous, vous perdez de l'argent ; au-dessus, vous en gagnez.
+            {margeSecurite<0&&<> Ce mois, vous êtes <b>{eur(-margeSecurite)}</b> sous le seuil.</>}
+            {" "}Pour un établissement <b>saisonnier</b>, un mois d'hiver sous le seuil est normal — c'est la pleine saison qui doit compenser. Le plus parlant est de regarder ce seuil sur la <b>saison entière</b> (onglet Cumul annuel une fois plusieurs mois enregistrés).</span></div>
+        </div>}
+      </>}
       {tab==="annuel"&&<>
         <div className="card">
           <div className="toolbar" style={{marginBottom:0}}>
@@ -1408,6 +1432,26 @@ export default function App(){
 
         {hotel.rev>0&&<div className="hint"><Info size={16}/>
           <span><b>Prix moyen de la chambre (ADR)</b> : ce qu'a rapporté en moyenne une chambre <i>occupée</i>. <b>Revenu par chambre (RevPAR)</b> : le même revenu réparti sur <i>toutes</i> vos chambres, y compris celles restées vides — c'est l'indicateur de performance réelle. Comme au cinéma : le premier est le prix moyen du billet vendu, le second la recette rapportée à tous les fauteuils de la salle.</span></div>}
+
+        {(()=>{
+          const memePeriode=pms&&moisDetecte&&(pms.mois-1)===mois&&pms.annee===annee;
+          if(!hotel||hotel.dispo<=0)return null;
+          if(!memePeriode) return (<div className="card"><h3>Performance globale par chambre</h3>
+            <div className="hint"><Info size={16}/><span>Importez la <b>balance du même mois</b> (onglet « Compte de résultat ») pour voir, en plus du RevPAR, le <b>revenu total</b> et le <b>bénéfice</b> par chambre disponible (restauration comprise). {pms&&moisDetecte?`Actuellement la balance porte sur un autre mois que l'export hôtel.`:""}</span></div></div>);
+          const trevpar=CA/hotel.dispo, goppar=EBE/hotel.dispo;
+          return (<div className="card"><h3>Performance globale par chambre (avec la restauration)</h3>
+            <div className="kpi-grid" style={{marginBottom:12}}>
+              <div className="kpi"><div className="lab">RevPAR — revenu chambres</div>
+                <div className="val num">{eur2(hotel.revpar)}</div><div className="mini">hébergement seul</div></div>
+              <div className="kpi"><div className="lab">TRevPAR — revenu total</div>
+                <div className="val num" style={{color:"var(--sage)"}}>{eur2(trevpar)}</div><div className="mini">hébergement + restauration + tout le reste</div></div>
+              <div className="kpi"><div className="lab">GOPPAR — bénéfice</div>
+                <div className="val num" style={{color:goppar>=0?"var(--sage)":"#C77B6B"}}>{eur2(goppar)}</div><div className="mini">résultat (EBE) par chambre disponible</div></div>
+            </div>
+            <div className="hint"><Info size={16}/>
+              <span>Ces trois indicateurs ramènent tout au <b>nombre de chambres disponibles</b> ({num(hotel.dispo)} chambres-nuits ce mois), pour comparer des mois entre eux quelle que soit la période. Le <b>RevPAR</b> ne compte que le revenu des chambres. Le <b>TRevPAR</b> (« revenu total par chambre disponible ») rapporte <i>tout</i> le chiffre d'affaires de l'établissement — hébergement, restaurant, bar, événements — à chaque chambre disponible : {eur2(trevpar)}, un niveau logiquement bien supérieur au RevPAR dans une maison où la restauration pèse lourd. Le <b>GOPPAR</b> (« bénéfice par chambre disponible ») va au bout : il rapporte le <i>résultat</i> (l'EBE) à chaque chambre — ce qui reste réellement une fois les charges payées. C'est l'indicateur que suivent les hôtels haut de gamme, rarement calculé pour un établissement de cette taille. (RevPAR issu de l'export hôtel ; TRevPAR et GOPPAR de la balance — mêmes chambres disponibles.)</span></div>
+          </div>);
+        })()}
 
         <div className="card"><h3>Remplissage jour par jour</h3>
           <p className="sub">Chaque barre est une journée. Les creux se repèrent d'un coup d'oeil.</p>
