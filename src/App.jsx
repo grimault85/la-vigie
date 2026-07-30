@@ -814,7 +814,7 @@ export default function App(){
   /* ---- Suivi annuel hôtel (magasin séparé du financier) ---- */
   const [hTab,setHTab]=useState("mois");
   const [hExYear,setHExYear]=useState(String(now.getFullYear()));
-  const [hMetric,setHMetric]=useState("to");
+  const [hCmpMonth,setHCmpMonth]=useState(0);
   const hStore=store.hotel||{};
   const hList=Object.keys(hStore).sort();
   const hSuivi=(hStore[hExYear]&&hStore[hExYear].months)||[];
@@ -865,21 +865,20 @@ export default function App(){
       dms:arr?vend/arr:0, parCh:vend?pers/vend:0,
       curve:sel.map(m=>({label:m.label,to:Math.round(m.to*10)/10,adr:Math.round(m.adr),revpar:Math.round(m.revpar)}))};
   },[hSuivi,hFrom,hTo,hAvail]);
-  const hCmp=useMemo(()=>{
-    const years=Object.keys(hStore).sort();
-    if(!years.length)return null;
-    const rows=MOISC.map((mn,i)=>{
-      const cell={mois:mn};
-      years.forEach(y=>{const m=(hStore[y].months||[]).find(x=>x.mois===i+1);
-        cell[y]=m?Math.round(m[hMetric]*(hMetric==="to"?10:1))/(hMetric==="to"?10:1):null;});
-      return cell;
-    }).filter(r=>years.some(y=>r[y]!=null));
-    return {years,rows};
-  },[hStore,hMetric]);
-  const hMetricInfo={to:{lab:"Taux de remplissage",fmt:(v)=>pct(v),unit:"%"},
-    adr:{lab:"Prix moyen chambre (ADR)",fmt:(v)=>eur2(v),unit:"€"},
-    revpar:{lab:"Revenu par chambre (RevPAR)",fmt:(v)=>eur2(v),unit:"€"}};
-  const YCOL=["#8B9683","#B5A18E","#C77B6B","#7A8CA3","#B8935A"];
+  const hAllMonths=useMemo(()=>Object.values(hStore).flatMap(y=>y.months||[]),[hStore]);
+  const hCmpMoisAvail=useMemo(()=>[...new Set(hAllMonths.map(m=>m.mois))].sort((a,b)=>a-b),[hAllMonths]);
+  const hCmpMois=hCmpMonth||(hCmpMoisAvail.length?hCmpMoisAvail[hCmpMoisAvail.length-1]:0);
+  const hCmpEntries=useMemo(()=>hAllMonths.filter(m=>m.mois===hCmpMois).sort((a,b)=>b.annee-a.annee),[hAllMonths,hCmpMois]);
+  const hCmpRows=[
+    {lab:"Taux de remplissage",get:m=>m.to,fmt:v=>pct(v),unit:" pts"},
+    {lab:"Prix moyen chambre (ADR)",get:m=>m.adr,fmt:v=>eur2(v),unit:" €"},
+    {lab:"Revenu par chambre (RevPAR)",get:m=>m.revpar,fmt:v=>eur2(v),unit:" €"},
+    {lab:"Nuitées vendues",get:m=>m.vend,fmt:v=>num(v),unit:""},
+    {lab:"Nuitées disponibles",get:m=>m.dispo,fmt:v=>num(v),unit:""},
+    {lab:"Durée moyenne de séjour",get:m=>m.dms,fmt:v=>v.toLocaleString("fr-FR",{maximumFractionDigits:2})+" nuits",unit:" nuits"},
+    {lab:"Arrivées",get:m=>m.arr,fmt:v=>num(v),unit:""},
+    {lab:"Personnes accueillies",get:m=>m.pers,fmt:v=>num(v),unit:""},
+  ];
 
   /* ---- Export xlsx ---- */
   const exportXlsx=()=>{
@@ -1612,44 +1611,35 @@ export default function App(){
 
         {hTab==="comparatif"&&<>
           <div className="card"><div className="toolbar" style={{marginBottom:0}}>
-            <div className="ifield" style={{minWidth:220}}><label>Indicateur comparé</label>
-              <select value={hMetric} onChange={e=>setHMetric(e.target.value)}>
-                <option value="to">Taux de remplissage</option>
-                <option value="adr">Prix moyen chambre (ADR)</option>
-                <option value="revpar">Revenu par chambre (RevPAR)</option>
+            <div className="ifield" style={{minWidth:200}}><label>Mois à comparer</label>
+              <select value={hCmpMois} onChange={e=>setHCmpMonth(+e.target.value)}>
+                {(hCmpMoisAvail.length?hCmpMoisAvail:[hCmpMois]).map(mo=><option key={mo} value={mo}>{MOIS[mo-1]}</option>)}
               </select></div>
           </div>
-          <p className="mini" style={{marginTop:12}}>{hCmp&&hCmp.years.length>1 ? "Comparaison de "+hCmp.years.join(" · ")+", mois par mois." : "Ajoutez au moins deux saisons (onglet « Mois ») pour comparer une année sur l'autre."}</p>
+          <p className="mini" style={{marginTop:12}}>{hCmpEntries.length>1
+            ? `${MOIS[hCmpMois-1]} comparé sur ${hCmpEntries.length} saisons : ${hCmpEntries.map(e=>e.annee).join(" · ")}.`
+            : `Ajoutez le mois de ${MOIS[hCmpMois-1]} sur au moins deux saisons (onglet « Mois ») pour le comparer d'une année sur l'autre.`}</p>
           </div>
 
-          {hCmp&&hCmp.rows.length>0&&<>
-            <div className="card"><h3>{hMetricInfo[hMetric].lab} — par mois</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <ComposedChart data={hCmp.rows} margin={{top:8,right:12,left:0,bottom:0}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
-                  <XAxis dataKey="mois" tick={{fontSize:11,fill:"#7A7268"}}/>
-                  <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+hMetricInfo[hMetric].unit} domain={hMetric==="to"?[0,100]:["auto","auto"]}/>
-                  <Tooltip formatter={v=>hMetricInfo[hMetric].fmt(v)} labelStyle={{fontWeight:700}}/>
-                  {hCmp.years.map((y,i)=><RLine key={y} type="monotone" dataKey={y} name={y} stroke={YCOL[i%YCOL.length]} strokeWidth={2.5} dot={{r:4,fill:YCOL[i%YCOL.length],stroke:"#fff",strokeWidth:1}} isAnimationActive={false} connectNulls/>)}
-                </ComposedChart>
-              </ResponsiveContainer>
-              <div className="legend">{hCmp.years.map((y,i)=><span key={y}><i style={{background:YCOL[i%YCOL.length]}}></i>{y}</span>)}</div>
-            </div>
-            <div className="card"><h3>Détail — {hMetricInfo[hMetric].lab}</h3>
-              <div className="hscroll"><table className="tbl">
-                <thead><tr><th>Mois</th>{hCmp.years.map(y=><th key={y} style={{textAlign:"right"}}>{y}</th>)}{hCmp.years.length>1&&<th style={{textAlign:"right"}}>Écart {hCmp.years[0]}→{hCmp.years[hCmp.years.length-1]}</th>}</tr></thead>
-                <tbody>{hCmp.rows.map((r,i)=>{
-                  const oldY=hCmp.years[0], newY=hCmp.years[hCmp.years.length-1];
-                  const d=(r[oldY]!=null&&r[newY]!=null)?r[newY]-r[oldY]:null;
-                  return(<tr key={i}>
-                    <td>{r.mois}</td>
-                    {hCmp.years.map(y=><td key={y} style={{textAlign:"right"}} className="num">{r[y]!=null?hMetricInfo[hMetric].fmt(r[y]):"—"}</td>)}
-                    {hCmp.years.length>1&&<td style={{textAlign:"right",fontWeight:600,color:d==null?"#9a9a9a":d>=0?"var(--sage)":"#C77B6B"}} className="num">{d==null?"—":(d>=0?"+":"")+hMetricInfo[hMetric].fmt(d)}</td>}
-                  </tr>);
-                })}</tbody>
-              </table></div>
-            </div>
-          </>}
+          {hCmpEntries.length>0&&<div className="card"><h3>{MOIS[hCmpMois-1]} — comparaison d'une année sur l'autre</h3>
+            <div className="hscroll"><table className="tbl">
+              <thead><tr><th>Indicateur</th>
+                {hCmpEntries.map(e=><th key={e.annee} style={{textAlign:"right"}}>{e.annee}</th>)}
+                {hCmpEntries.length>1&&<th style={{textAlign:"right"}}>Évolution {hCmpEntries[1].annee}→{hCmpEntries[0].annee}</th>}
+              </tr></thead>
+              <tbody>{hCmpRows.map((r,i)=>{
+                const recent=hCmpEntries[0], prev=hCmpEntries[1];
+                const d=(prev)?r.get(recent)-r.get(prev):null;
+                return(<tr key={i}>
+                  <td>{r.lab}</td>
+                  {hCmpEntries.map(e=><td key={e.annee} style={{textAlign:"right"}} className="num">{r.fmt(r.get(e))}</td>)}
+                  {hCmpEntries.length>1&&<td style={{textAlign:"right",fontWeight:600,color:d==null?"#9a9a9a":d>=0?"var(--sage)":"#C77B6B"}} className="num">{d==null?"—":(d>=0?"+":"")+(r.unit===" pts"?d.toLocaleString("fr-FR",{maximumFractionDigits:1})+" pts":r.unit===" nuits"?d.toLocaleString("fr-FR",{maximumFractionDigits:2})+" nuits":r.unit===" €"?eur2(d):num(d))}</td>}
+                </tr>);
+              })}</tbody>
+            </table></div>
+            {hCmpEntries.length>1&&<div className="hint" style={{marginTop:12}}><Info size={16}/>
+              <span>La dernière colonne montre l'évolution de <b>{MOIS[hCmpMois-1]} {hCmpEntries[0].annee}</b> par rapport à <b>{MOIS[hCmpMois-1]} {hCmpEntries[1].annee}</b> — en vert si en hausse, en rouge si en baisse. C'est le bon réflexe pour un saisonnier : comparer un mois à ce même mois l'an dernier, pas à un autre mois de la saison.</span></div>}
+          </div>}
         </>}
       </>}
     </div></div>
