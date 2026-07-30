@@ -62,6 +62,11 @@ const css = `
 .pnl td.lbl{color:var(--ink)}
 .pnl td.cpt{font-size:11px;color:var(--taupe);white-space:nowrap;font-weight:700}
 .pnl td.amt{text-align:right;width:150px;white-space:nowrap}
+.pnl.compact{table-layout:fixed;width:100%}
+.pnl.compact td{padding:4px 5px;font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.pnl.compact td:first-child{width:132px}
+.pnl.compact td:last-child{width:64px}
+.pnl.compact td.lbl{font-size:12.5px;max-width:150px;white-space:normal;line-height:1.2}
 .hscroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--taupe) transparent}
 .hscroll::-webkit-scrollbar{height:8px}
 .hscroll::-webkit-scrollbar-track{background:transparent}
@@ -119,6 +124,11 @@ const eur = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits
 const eur2 = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const pct = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %";
 const num = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:0});
+const eurK = (n)=>{ n=isFinite(n)?n:0; const a=Math.abs(n);
+  if(a>=1e6) return (n/1e6).toLocaleString("fr-FR",{maximumFractionDigits:2})+" M€";
+  if(a>=1e4) return Math.round(n/1e3).toLocaleString("fr-FR")+" k€";
+  if(a>=1000) return (n/1e3).toLocaleString("fr-FR",{maximumFractionDigits:1})+" k€";
+  return Math.round(n).toLocaleString("fr-FR")+" €"; };
 
 /* ---- Mise en forme Excel (xlsx-js-style) ---- */
 const XMONEY='#,##0" €";[Red]\\-#,##0" €"';
@@ -1112,9 +1122,9 @@ export default function App(){
             <div className="ifield"><label>Taux IS (%)</label><input type="number" value={tauxIS} onChange={e=>setTauxIS(+e.target.value)}/></div>
             <div style={{flex:1}}/>
             {Object.keys(ov).length>0&&<button className="btn ghost" onClick={()=>setOv({})}><RotateCcw size={14}/> Réinitialiser</button>}
-            <button className="btn pri" onClick={exportPdf} disabled={!CA}><FileText size={14}/> Bilan du mois (PDF)</button>
+            <button className="btn pri" onClick={exportPdf} disabled={!bal&&!jalia&&!CA}><FileText size={14}/> Bilan du mois (PDF)</button>
             <button className="btn ghost" onClick={exportXlsx}><Download size={14}/> Excel</button>
-            <button className="btn" onClick={addMonth} disabled={!CA}><Plus size={14}/> Ajouter au tableau</button>
+            <button className="btn" onClick={addMonth} disabled={!bal&&!jalia&&!CA}><Plus size={14}/> Ajouter au tableau</button>
           </div>
 
           <table className="pnl"><tbody>
@@ -1220,7 +1230,7 @@ export default function App(){
           <p className="mini" style={{marginTop:12}}>
             {archived
               ? <><Lock size={12} style={{verticalAlign:"-2px"}}/> Exercice archivé — lecture seule. Consultable et exportable, mais plus modifiable.</>
-              : <>{suivi.length} mois enregistré{suivi.length>1?"s":""}. Depuis « Compte de résultat », cliquez « Ajouter au tableau » après chaque import.</>}
+              : <>{suivi.length} mois enregistré{suivi.length>1?"s":""} · montants en k€ (détail exact dans le compte de résultat mensuel et l'export Excel). Depuis « Compte de résultat », cliquez « Ajouter au tableau » après chaque import.</>}
             {" · "}{memOK
               ? "Mémorisation automatique active : vos données sont conservées à la fermeture."
               : "⚠ Mémorisation auto indisponible sur ce poste — utilisez la sauvegarde manuelle ci-dessous."}
@@ -1238,7 +1248,7 @@ export default function App(){
           ? <div className="card"><div className="hint"><CalendarDays size={16}/>
               <span>Exercice {exYear} vide. Importez une balance, vérifiez le compte de résultat, puis cliquez « Ajouter au tableau » — chaque mois viendra remplir une colonne ici.</span></div></div>
           : <div className="card hscroll">
-              <table className="pnl" style={{minWidth:520}}><tbody>
+              <table className="pnl compact" style={{width:"100%"}}><tbody>
                 <tr className="sec">
                   <td style={{position:"sticky",left:0}}>Poste</td>
                   {suivi.map(m=>(<td key={m.key} style={{textAlign:"right",textTransform:"none",letterSpacing:0,whiteSpace:"nowrap"}}>
@@ -1253,8 +1263,8 @@ export default function App(){
                   const cum=vs.reduce((a,b)=>a+b,0);
                   return(<tr key={k} className={cls==="res"?"res":cls==="sub"?"sub":""}>
                     <td className="lbl" style={{position:"sticky",left:0,background:cls?"inherit":"var(--card)"}}>{label}</td>
-                    {vs.map((v,i)=><td key={i} className="amt num" style={{width:"auto"}}>{eur(v)}</td>)}
-                    <td className="amt num" style={{width:"auto",fontWeight:700}}>{eur(cum)}</td>
+                    {vs.map((v,i)=><td key={i} className="amt num" style={{width:"auto"}}>{eurK(v)}</td>)}
+                    <td className="amt num" style={{width:"auto",fontWeight:700}}>{eurK(cum)}</td>
                   </tr>);
                 })}
               </tbody></table>
@@ -1283,7 +1293,7 @@ export default function App(){
 
         {cmpEntries.length>=1&&
           <div className="card hscroll">
-            <table className="pnl" style={{minWidth:520}}><tbody>
+            <table className="pnl compact" style={{width:"100%"}}><tbody>
               <tr className="sec">
                 <td style={{position:"sticky",left:0}}>Poste</td>
                 {cmpEntries.map(e=>(<td key={e.annee} style={{textAlign:"right",textTransform:"none",letterSpacing:0}}>{MOIS[cmpMonth].slice(0,3)} {e.annee}</td>))}
