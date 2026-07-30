@@ -62,6 +62,11 @@ const css = `
 .pnl td.lbl{color:var(--ink)}
 .pnl td.cpt{font-size:11px;color:var(--taupe);white-space:nowrap;font-weight:700}
 .pnl td.amt{text-align:right;width:150px;white-space:nowrap}
+.hscroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--taupe) transparent}
+.hscroll::-webkit-scrollbar{height:8px}
+.hscroll::-webkit-scrollbar-track{background:transparent}
+.hscroll::-webkit-scrollbar-thumb{background:var(--taupe);border-radius:6px}
+.hscroll::-webkit-scrollbar-thumb:hover{background:var(--sage)}
 .pnl td.amt input{text-align:right;padding:6px 9px}
 .pnl tr.sec td{background:var(--sage);color:#fff;font:700 11px 'Lato';text-transform:uppercase;letter-spacing:.1em;padding:8px 10px;border:0}
 .pnl tr.sub td{font-weight:700;background:var(--taupe-soft);border-top:1px solid var(--taupe)}
@@ -817,7 +822,7 @@ export default function App(){
       h[y]={months:[...prev,e].sort((a,b)=>a.key<b.key?-1:1)};
       return {...s,hotel:h};
     });
-    setHExYear(y);setHTab("annuel");
+    setHFrom(0);setHTo(0);setHExYear(y);setHTab("annuel");
   };
   const removeHotelMonth=(key)=>setStore(s=>{
     const h={...(s.hotel||{})};if(!h[hExYear])return s;
@@ -1232,7 +1237,7 @@ export default function App(){
         {suivi.length===0
           ? <div className="card"><div className="hint"><CalendarDays size={16}/>
               <span>Exercice {exYear} vide. Importez une balance, vérifiez le compte de résultat, puis cliquez « Ajouter au tableau » — chaque mois viendra remplir une colonne ici.</span></div></div>
-          : <div className="card" style={{overflowX:"auto"}}>
+          : <div className="card hscroll">
               <table className="pnl" style={{minWidth:520}}><tbody>
                 <tr className="sec">
                   <td style={{position:"sticky",left:0}}>Poste</td>
@@ -1277,7 +1282,7 @@ export default function App(){
         </div>
 
         {cmpEntries.length>=1&&
-          <div className="card" style={{overflowX:"auto"}}>
+          <div className="card hscroll">
             <table className="pnl" style={{minWidth:520}}><tbody>
               <tr className="sec">
                 <td style={{position:"sticky",left:0}}>Poste</td>
@@ -1492,7 +1497,7 @@ export default function App(){
         </div>
 
         <div className="card"><h3>Détail des journées</h3>
-          <div style={{overflowX:"auto"}}><table className="tbl">
+          <div className="hscroll"><table className="tbl">
             <thead><tr><th>Date</th><th>Jour</th><th style={{textAlign:"right"}}>Chambres occupées</th>
               <th style={{textAlign:"right"}}>Remplissage</th><th style={{textAlign:"right"}}>Arrivées</th>
               <th style={{textAlign:"right"}}>Personnes</th><th style={{textAlign:"right"}}>Hors service</th></tr></thead>
@@ -1580,7 +1585,7 @@ export default function App(){
               <div className="legend"><span><i style={{background:"var(--taupe)"}}></i>ADR</span><span><i style={{background:"var(--sage)"}}></i>RevPAR</span></div>
             </div>
             <div className="card"><h3>Détail des mois</h3>
-              <div style={{overflowX:"auto"}}><table className="tbl">
+              <div className="hscroll"><table className="tbl">
                 <thead><tr><th>Mois</th><th style={{textAlign:"right"}}>Remplissage</th><th style={{textAlign:"right"}}>ADR</th><th style={{textAlign:"right"}}>RevPAR</th><th style={{textAlign:"right"}}>Nuitées</th><th></th></tr></thead>
                 <tbody>{hCumul.months.map((m,i)=>(<tr key={i}>
                   <td>{m.label}</td>
@@ -1621,7 +1626,7 @@ export default function App(){
               <div className="legend">{hCmp.years.map((y,i)=><span key={y}><i style={{background:YCOL[i%YCOL.length]}}></i>{y}</span>)}</div>
             </div>
             <div className="card"><h3>Détail — {hMetricInfo[hMetric].lab}</h3>
-              <div style={{overflowX:"auto"}}><table className="tbl">
+              <div className="hscroll"><table className="tbl">
                 <thead><tr><th>Mois</th>{hCmp.years.map(y=><th key={y} style={{textAlign:"right"}}>{y}</th>)}{hCmp.years.length>1&&<th style={{textAlign:"right"}}>Écart {hCmp.years[0]}→{hCmp.years[hCmp.years.length-1]}</th>}</tr></thead>
                 <tbody>{hCmp.rows.map((r,i)=>{
                   const oldY=hCmp.years[0], newY=hCmp.years[hCmp.years.length-1];
