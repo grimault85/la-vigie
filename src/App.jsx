@@ -506,7 +506,8 @@ export default function App(){
     try{
       const raw=window.localStorage.getItem(MEMKEY);
       if(raw){const d=JSON.parse(raw);if(d&&d.exercices){setStore(d);
-        const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);}}
+        const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);
+        if(d.hotel){const hys=Object.keys(d.hotel).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}}
       // test d'écriture
       window.localStorage.setItem("__t","1");window.localStorage.removeItem("__t");
     }catch(e){setMemOK(false);}
@@ -694,7 +695,7 @@ export default function App(){
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
     a.download=`pilotage_sauvegarde.json`;a.click();
   };
-  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
+  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);const hys=Object.keys(d.hotel||{}).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
   const exportAnnual=()=>{
     const cols=suivi.map(m=>m.label);
     const ncols=cols.length+2;
