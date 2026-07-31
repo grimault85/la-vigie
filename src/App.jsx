@@ -612,6 +612,38 @@ export default function App(){
   const seuilRenta=(tauxMCV>0)?chargesFixesTot/tauxMCV:null;  // seuil de rentabilité (CA HT)
   const margeSecurite=(seuilRenta!=null&&CA>0)?CA-seuilRenta:null; // écart au seuil (€)
   const tauxMargeSecurite=(seuilRenta!=null&&CA>0)?(CA-seuilRenta)/CA*100:null;
+
+  // Points de vigilance : chiffres qui paraissent anormaux (erreur de saisie / lecture probable)
+  const alertes=useMemo(()=>{
+    const A=[]; const key=`${annee}-${String(mois+1).padStart(2,"0")}`;
+    const others=(store.exercices?.[String(annee)]?.months||[]).filter(m=>m.key!==key);
+    const median=(arr)=>{const s=arr.slice().sort((a,b)=>a-b);return s.length?s[Math.floor((s.length-1)/2)]:0;};
+    const POSTES=[
+      {k:"loyer",lab:"Loyer"},{k:"autres_loc",lab:"Autres locations"},{k:"matieres",lab:"Coût matières"},
+      {k:"conso_var",lab:"Consommables"},{k:"salaires",lab:"Salaires"},{k:"urssaf",lab:"Cotisations URSSAF"},
+      {k:"mutuelle",lab:"Mutuelle"},{k:"retraite",lab:"Retraite"},{k:"energie",lab:"Énergie"},
+      {k:"assurances",lab:"Assurances"},{k:"honoraires",lab:"Honoraires"},{k:"telecom",lab:"Télécom & internet"},
+      {k:"entretien",lab:"Entretien"},{k:"deplacements",lab:"Déplacements"},{k:"comm_var",lab:"Commissions"},
+      {k:"pub",lab:"Publicité"},{k:"dotations",lab:"Dotations aux amortissements"},
+      {k:"autres_gc",lab:"Autres charges de gestion courante"},{k:"autres_charges",lab:"Autres charges d'exploitation"},
+      {k:"impots_fixe",lab:"Impôts & taxes"},{k:"bq_fixe",lab:"Frais bancaires"},{k:"divers_fixe",lab:"Charges diverses"},
+    ];
+    POSTES.forEach(pc=>{
+      const cur=Math.abs(P[pc.k]||0); if(cur<=0)return;
+      // 1) écart fort à l'historique du même poste
+      if(others.length>=2){
+        const vals=others.map(m=>Math.abs(m.vals?.[pc.k]||0)).filter(v=>v>0);
+        if(vals.length>=2){const med=median(vals);
+          if(med>100 && cur>med*4){A.push({lab:pc.lab,val:P[pc.k],msg:`inhabituel — ce poste tourne plutôt autour de ${eur(med)} par mois`});return;}
+        }
+      }
+      // 2) charge disproportionnée par rapport au CA d'un mois d'activité (erreur de décimale / compte ?)
+      if(CA>5000 && cur>CA*1.5){
+        A.push({lab:pc.lab,val:P[pc.k],msg:`dépasse largement le CA du mois (${eur(CA)}) — vérifiez une décimale ou un compte mal classé`});
+      }
+    });
+    return A;
+  },[P,CA,store,annee,mois]);
   const RES_FIN=P.prod_fin-P.charges_fin;
   const RES_EXC=P.prod_except-P.charges_except;
   const RAI=RES_EXPL+RES_FIN+RES_EXC;
@@ -1060,6 +1092,18 @@ export default function App(){
 
       {/* ========== COMPTE DE RÉSULTAT ========== */}
       {tab==="cr"&&<>
+        {alertes.length>0&&<div className="card" style={{borderLeft:"3px solid #C77B6B"}}>
+          <h3 style={{color:"#C77B6B"}}>⚠ Points de vigilance — chiffres à vérifier</h3>
+          <p className="sub">Ces montants paraissent inhabituels. Vérifiez-les, et corrigez-les si besoin directement sur la ligne concernée du compte de résultat (les valeurs sont modifiables).</p>
+          <table className="tbl" style={{marginTop:10}}>
+            <thead><tr><th>Poste</th><th style={{textAlign:"right"}}>Montant lu</th><th>Pourquoi</th></tr></thead>
+            <tbody>{alertes.map((a,i)=>(<tr key={i}>
+              <td style={{fontWeight:600}}>{a.lab}</td>
+              <td style={{textAlign:"right",fontWeight:700,color:"#C77B6B"}} className="num">{eur(a.val)}</td>
+              <td className="mini">{a.msg}</td>
+            </tr>))}</tbody>
+          </table>
+        </div>}
         <div className="card">
           <h3>Import de la balance</h3>
           <p className="sub">Déposez la balance en <b>PDF</b> (lue automatiquement) ou en Excel. Le regroupement suit le Plan Comptable Général.</p>
