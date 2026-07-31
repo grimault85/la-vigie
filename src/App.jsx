@@ -11,7 +11,7 @@ try {
 } catch (e) { /* worker fallback géré au parsing */ }
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ComposedChart, ReferenceLine, Cell, LineChart, Line,
+  ComposedChart, ReferenceLine, Cell, LineChart, Line as RLine,
 } from "recharts";
 import {
   Upload, FileSpreadsheet, Activity, BedDouble, Coins, Info, Users,
@@ -61,7 +61,17 @@ const css = `
 .pnl td{padding:6px 10px;border-bottom:1px solid #F0EBE3}
 .pnl td.lbl{color:var(--ink)}
 .pnl td.cpt{font-size:11px;color:var(--taupe);white-space:nowrap;font-weight:700}
-.pnl td.amt{text-align:right;width:150px}
+.pnl td.amt{text-align:right;width:150px;white-space:nowrap}
+.pnl.compact{table-layout:fixed;width:100%}
+.pnl.compact td{padding:4px 5px;font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.pnl.compact td:first-child{width:132px}
+.pnl.compact td:last-child{width:64px}
+.pnl.compact td.lbl{font-size:12.5px;max-width:150px;white-space:normal;line-height:1.2}
+.hscroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--taupe) transparent}
+.hscroll::-webkit-scrollbar{height:8px}
+.hscroll::-webkit-scrollbar-track{background:transparent}
+.hscroll::-webkit-scrollbar-thumb{background:var(--taupe);border-radius:6px}
+.hscroll::-webkit-scrollbar-thumb:hover{background:var(--sage)}
 .pnl td.amt input{text-align:right;padding:6px 9px}
 .pnl tr.sec td{background:var(--sage);color:#fff;font:700 11px 'Lato';text-transform:uppercase;letter-spacing:.1em;padding:8px 10px;border:0}
 .pnl tr.sub td{font-weight:700;background:var(--taupe-soft);border-top:1px solid var(--taupe)}
@@ -114,6 +124,11 @@ const eur = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits
 const eur2 = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const pct = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %";
 const num = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:0});
+const eurK = (n)=>{ n=isFinite(n)?n:0; const a=Math.abs(n);
+  if(a>=1e6) return (n/1e6).toLocaleString("fr-FR",{maximumFractionDigits:2})+" M€";
+  if(a>=1e4) return Math.round(n/1e3).toLocaleString("fr-FR")+" k€";
+  if(a>=1000) return (n/1e3).toLocaleString("fr-FR",{maximumFractionDigits:1})+" k€";
+  return Math.round(n).toLocaleString("fr-FR")+" €"; };
 
 /* ---- Mise en forme Excel (xlsx-js-style) ---- */
 const XMONEY='#,##0" €";[Red]\\-#,##0" €"';
@@ -273,6 +288,14 @@ function jaliaCategory(parent){
   if(has("plat","dessert","entrée","entree","fromage","menu","garniture","poisson","viande","tapas","planche","pizza","burger","salade","formule","brunch","sandwich","frites")) return "resto";
   return "autres"; // défaut : famille non reconnue → Autres/Divers (jamais noyée dans Restauration)
 }
+function parseJaliaPeriode(name){
+  // Export Jalia : ..._AAAAMMJJ_AAAAMMJJ_...  → mois (0-indexé) et année du début de plage
+  const m=/[_-](\d{4})(\d{2})(\d{2})[_-](\d{4})(\d{2})(\d{2})/.exec(String(name||""));
+  if(!m)return null;
+  const mo=parseInt(m[2],10), an=parseInt(m[1],10);
+  if(mo<1||mo>12)return null;
+  return {mois:mo-1,annee:an};
+}
 function parseJalia(d){
   const iP=guessCol(d.headers,["parent"]);
   const iHT=guessCol(d.headers,["ht"]);
@@ -288,7 +311,7 @@ function parseJalia(d){
   });
   Object.keys(cats).forEach(k=>cats[k]=Math.round(cats[k]*100)/100);
   const total=Math.round(Object.values(cats).reduce((a,b)=>a+b,0)*100)/100;
-  return {ok:true,cats,total,families:Object.entries(fam).map(([parent,v])=>({parent,ht:Math.round(v.ht*100)/100,cat:v.cat})).sort((a,b)=>b.ht-a.ht)};
+  return {ok:true,cats,total,periode:parseJaliaPeriode(d.name),families:Object.entries(fam).map(([parent,v])=>({parent,ht:Math.round(v.ht*100)/100,cat:v.cat})).sort((a,b)=>b.ht-a.ht)};
 }
 
 /* --- Lecture d'un export de statistiques du logiciel de réservation (une ligne par jour) --- */
@@ -388,6 +411,7 @@ function classify(cptRaw){
   if(is("66"))return "charges_fin";
   if(is("67"))return "charges_except";
   if(is("68"))return "dotations";
+  if(is("6"))return "autres_charges"; // filet : tout compte de charge (classe 6) non reconnu (604,605,611,612,621…) — aucune charge n'est perdue
   return null; // classes 1-5 (bilan) ignorées
 }
 
@@ -482,7 +506,8 @@ export default function App(){
     try{
       const raw=window.localStorage.getItem(MEMKEY);
       if(raw){const d=JSON.parse(raw);if(d&&d.exercices){setStore(d);
-        const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);}}
+        const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);
+        if(d.hotel){const hys=Object.keys(d.hotel).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}}
       // test d'écriture
       window.localStorage.setItem("__t","1");window.localStorage.removeItem("__t");
     }catch(e){setMemOK(false);}
@@ -518,7 +543,7 @@ export default function App(){
       loyer:0,autres_loc:0,entretien:0,assurances:0,energie:0,divers_fixe:0,honoraires:0,
       telecom:0,bq_fixe:0,deplacements:0,impots_fixe:0,autres_gc:0,
       salaires:0,urssaf:0,mutuelle:0,retraite:0,autres_orgs:0,taxes_sal:0,
-      dotations:0,charges_fin:0,charges_except:0,ca:0,ca_hotel:0,ca_petitdej:0,ca_evt:0,autres_produits:0,prod_fin:0,prod_except:0};
+      dotations:0,autres_charges:0,charges_fin:0,charges_except:0,ca:0,ca_hotel:0,ca_petitdej:0,ca_evt:0,autres_produits:0,prod_fin:0,prod_except:0};
     let ignored=0,classified=0;
     if(bal&&bal.source==="pdf"){
       (bal.parsed||[]).forEach(r=>{
@@ -548,7 +573,14 @@ export default function App(){
   const B=auto.b;
 
   // CA ventilé : bar/resto/événement depuis Jalia si dispo, sinon balance ; hôtel/petit déj depuis la balance
-  const J=jalia&&!jalia.error?jalia.cats:null;
+  const caissePeriode=jalia&&!jalia.error?jalia.periode:null;
+  const caisseMemePeriode=(caissePeriode&&moisDetecte)?(caissePeriode.mois===mois&&caissePeriode.annee===annee):null;
+  // Caisse "vide" (mois de fermeture) : caisse ≈ 0 alors que la balance porte du bar-resto/événements.
+  // On repasse alors sur le compta pour ne pas afficher un CA faux (et jamais négatif par oubli du compta).
+  const compta70=B.ca+B.ca_evt;
+  const caisseTotal=jalia&&!jalia.error?(jalia.total||0):0;
+  const jaliaVide=jalia&&!jalia.error&&Math.abs(compta70)>100&&caisseTotal<0.01*Math.abs(compta70);
+  const J=(jalia&&!jalia.error&&!jaliaVide)?jalia.cats:null;
   const caResto=g("ca_resto",J?J.resto:B.ca);
   const caBar=g("ca_bar",J?J.bar:0);
   const caHotel=g("ca_hotel",B.ca_hotel);
@@ -564,15 +596,54 @@ export default function App(){
   ["matieres","conso_var","comm_var","cb_var","pub","loyer","autres_loc","entretien","assurances",
    "energie","divers_fixe","honoraires","telecom","bq_fixe","deplacements","impots_fixe","autres_gc",
    "salaires","urssaf","mutuelle","retraite","autres_orgs","taxes_sal","dotations","charges_fin",
-   "charges_except","autres_produits","prod_fin","prod_except"].forEach(k=>P[k]=g(k,B[k]));
+   "charges_except","autres_charges","autres_produits","prod_fin","prod_except"].forEach(k=>P[k]=g(k,B[k]));
 
   const CV=P.matieres+P.conso_var+P.comm_var+P.cb_var+P.pub;
   const CF_autres=P.loyer+P.autres_loc+P.entretien+P.assurances+P.energie+P.divers_fixe+P.honoraires
-    +P.telecom+P.bq_fixe+P.deplacements+P.impots_fixe+P.autres_gc;
+    +P.telecom+P.bq_fixe+P.deplacements+P.impots_fixe+P.autres_gc+P.autres_charges;
   const MS=P.salaires+P.urssaf+P.mutuelle+P.retraite+P.autres_orgs+P.taxes_sal;
   const CF=CF_autres+MS;
   const EBE=CA+P.autres_produits-CV-CF_autres-MS;
   const RES_EXPL=EBE-P.dotations;
+  // Seuil de rentabilité : CA à atteindre pour que le résultat d'exploitation soit nul
+  const MCV=CA-CV;                                   // marge sur coûts variables (€)
+  const tauxMCV=CA>0?MCV/CA:0;                       // part de chaque euro de vente qui reste après coûts variables
+  const chargesFixesTot=CF_autres+MS+P.dotations;    // charges fixes d'exploitation
+  const seuilRenta=(tauxMCV>0)?chargesFixesTot/tauxMCV:null;  // seuil de rentabilité (CA HT)
+  const margeSecurite=(seuilRenta!=null&&CA>0)?CA-seuilRenta:null; // écart au seuil (€)
+  const tauxMargeSecurite=(seuilRenta!=null&&CA>0)?(CA-seuilRenta)/CA*100:null;
+
+  // Points de vigilance : chiffres qui paraissent anormaux (erreur de saisie / lecture probable)
+  const alertes=useMemo(()=>{
+    const A=[]; const key=`${annee}-${String(mois+1).padStart(2,"0")}`;
+    const others=(store.exercices?.[String(annee)]?.months||[]).filter(m=>m.key!==key);
+    const median=(arr)=>{const s=arr.slice().sort((a,b)=>a-b);return s.length?s[Math.floor((s.length-1)/2)]:0;};
+    const POSTES=[
+      {k:"loyer",lab:"Loyer"},{k:"autres_loc",lab:"Autres locations"},{k:"matieres",lab:"Coût matières"},
+      {k:"conso_var",lab:"Consommables"},{k:"salaires",lab:"Salaires"},{k:"urssaf",lab:"Cotisations URSSAF"},
+      {k:"mutuelle",lab:"Mutuelle"},{k:"retraite",lab:"Retraite"},{k:"energie",lab:"Énergie"},
+      {k:"assurances",lab:"Assurances"},{k:"honoraires",lab:"Honoraires"},{k:"telecom",lab:"Télécom & internet"},
+      {k:"entretien",lab:"Entretien"},{k:"deplacements",lab:"Déplacements"},{k:"comm_var",lab:"Commissions"},
+      {k:"pub",lab:"Publicité"},{k:"dotations",lab:"Dotations aux amortissements"},
+      {k:"autres_gc",lab:"Autres charges de gestion courante"},{k:"autres_charges",lab:"Autres charges d'exploitation"},
+      {k:"impots_fixe",lab:"Impôts & taxes"},{k:"bq_fixe",lab:"Frais bancaires"},{k:"divers_fixe",lab:"Charges diverses"},
+    ];
+    POSTES.forEach(pc=>{
+      const cur=Math.abs(P[pc.k]||0); if(cur<=0)return;
+      // 1) écart fort à l'historique du même poste
+      if(others.length>=2){
+        const vals=others.map(m=>Math.abs(m.vals?.[pc.k]||0)).filter(v=>v>0);
+        if(vals.length>=2){const med=median(vals);
+          if(med>100 && cur>med*4){A.push({lab:pc.lab,val:P[pc.k],msg:`inhabituel — ce poste tourne plutôt autour de ${eur(med)} par mois`});return;}
+        }
+      }
+      // 2) charge disproportionnée par rapport au CA d'un mois d'activité (erreur de décimale / compte ?)
+      if(CA>5000 && cur>CA*1.5){
+        A.push({lab:pc.lab,val:P[pc.k],msg:`dépasse largement le CA du mois (${eur(CA)}) — vérifiez une décimale ou un compte mal classé`});
+      }
+    });
+    return A;
+  },[P,CA,store,annee,mois]);
   const RES_FIN=P.prod_fin-P.charges_fin;
   const RES_EXC=P.prod_except-P.charges_except;
   const RAI=RES_EXPL+RES_FIN+RES_EXC;
@@ -583,7 +654,7 @@ export default function App(){
   const autoProduits=B.ca+B.ca_hotel+B.ca_petitdej+B.ca_evt+B.autres_produits+B.prod_fin+B.prod_except;
   const autoCharges=B.matieres+B.conso_var+B.comm_var+B.cb_var+B.pub+B.loyer+B.autres_loc+B.entretien
     +B.assurances+B.energie+B.divers_fixe+B.honoraires+B.telecom+B.bq_fixe+B.deplacements+B.impots_fixe
-    +B.autres_gc+B.salaires+B.urssaf+B.mutuelle+B.retraite+B.autres_orgs+B.taxes_sal+B.dotations
+    +B.autres_gc+B.autres_charges+B.salaires+B.urssaf+B.mutuelle+B.retraite+B.autres_orgs+B.taxes_sal+B.dotations
     +B.charges_fin+B.charges_except;
   const autoRAI=Math.round((autoProduits-autoCharges)*100)/100;
   const control=(bal&&bal.source==="pdf"&&bal.control!=null)?bal.control:null;
@@ -593,6 +664,7 @@ export default function App(){
   const LIGNES=[
     ["ca_resto","CA Restauration",caResto],["ca_bar","CA Bar",caBar],["ca_hotel","CA Hôtel",caHotel],
     ["ca_pdej","CA Petit déjeuner",caPdej],["ca_evt","CA Événements",caEvt],["ca_autres","CA Autres / Divers",caAutres],["CA","TOTAL CA HT",CA,"sub"],
+    ["autres_produits","Autres produits d'exploitation",P.autres_produits],
     ["matieres","Matières premières",P.matieres],["conso_var","Consommables variables",P.conso_var],
     ["comm_var","Commissions plateformes",P.comm_var],["cb_var","Frais bancaires variables",P.cb_var],
     ["pub","Publicité",P.pub],["CV","TOTAL CHARGES VARIABLES",CV,"sub"],
@@ -601,14 +673,15 @@ export default function App(){
     ["energie","Énergie",P.energie],["divers_fixe","Documentation / divers",P.divers_fixe],
     ["honoraires","Honoraires",P.honoraires],["telecom","Télécom / Internet",P.telecom],
     ["bq_fixe","Frais bancaires fixes",P.bq_fixe],["deplacements","Déplacements / réceptions",P.deplacements],
-    ["impots_fixe","Impôts & taxes",P.impots_fixe],["autres_gc","Autres charges gestion courante",P.autres_gc],
+    ["impots_fixe","Impôts & taxes",P.impots_fixe],["autres_gc","Autres charges gestion courante",P.autres_gc],["autres_charges","Autres charges d'exploitation",P.autres_charges],
     ["salaires","Salaires bruts",P.salaires],["urssaf","URSSAF",P.urssaf],["retraite","Retraite",P.retraite],
     ["mutuelle","Mutuelle / prévoyance",P.mutuelle],["autres_orgs","Autres organismes",P.autres_orgs],
     ["taxes_sal","Taxes sur salaires",P.taxes_sal],["MS","Masse salariale",MS,"sub"],
     ["CF","TOTAL CHARGES FIXES",CF,"sub"],
     ["EBE","EBE",EBE,"res"],["dotations","Dotations amortissements",P.dotations],
     ["RES_EXPL","Résultat d'exploitation",RES_EXPL,"sub"],
-    ["charges_fin","Charges financières",P.charges_fin],["charges_except","Charges exceptionnelles",P.charges_except],
+    ["prod_fin","Produits financiers",P.prod_fin],["charges_fin","Charges financières",P.charges_fin],
+    ["prod_except","Produits exceptionnels",P.prod_except],["charges_except","Charges exceptionnelles",P.charges_except],
     ["RAI","Résultat avant impôt",RAI,"sub"],["IS","Impôt sur les sociétés",-IS],
     ["RN","RÉSULTAT NET",RN,"res"],
   ];
@@ -654,7 +727,7 @@ export default function App(){
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
     a.download=`pilotage_sauvegarde.json`;a.click();
   };
-  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
+  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);const hys=Object.keys(d.hotel||{}).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
   const exportAnnual=()=>{
     const cols=suivi.map(m=>m.label);
     const ncols=cols.length+2;
@@ -774,7 +847,7 @@ export default function App(){
   /* ---- Suivi annuel hôtel (magasin séparé du financier) ---- */
   const [hTab,setHTab]=useState("mois");
   const [hExYear,setHExYear]=useState(String(now.getFullYear()));
-  const [hMetric,setHMetric]=useState("to");
+  const [hCmpMonth,setHCmpMonth]=useState(0);
   const hStore=store.hotel||{};
   const hList=Object.keys(hStore).sort();
   const hSuivi=(hStore[hExYear]&&hStore[hExYear].months)||[];
@@ -792,7 +865,7 @@ export default function App(){
       h[y]={months:[...prev,e].sort((a,b)=>a.key<b.key?-1:1)};
       return {...s,hotel:h};
     });
-    setHExYear(y);setHTab("annuel");
+    setHFrom(0);setHTo(0);setHExYear(y);setHTab("annuel");
   };
   const removeHotelMonth=(key)=>setStore(s=>{
     const h={...(s.hotel||{})};if(!h[hExYear])return s;
@@ -825,21 +898,20 @@ export default function App(){
       dms:arr?vend/arr:0, parCh:vend?pers/vend:0,
       curve:sel.map(m=>({label:m.label,to:Math.round(m.to*10)/10,adr:Math.round(m.adr),revpar:Math.round(m.revpar)}))};
   },[hSuivi,hFrom,hTo,hAvail]);
-  const hCmp=useMemo(()=>{
-    const years=Object.keys(hStore).sort();
-    if(!years.length)return null;
-    const rows=MOISC.map((mn,i)=>{
-      const cell={mois:mn};
-      years.forEach(y=>{const m=(hStore[y].months||[]).find(x=>x.mois===i+1);
-        cell[y]=m?Math.round(m[hMetric]*(hMetric==="to"?10:1))/(hMetric==="to"?10:1):null;});
-      return cell;
-    }).filter(r=>years.some(y=>r[y]!=null));
-    return {years,rows};
-  },[hStore,hMetric]);
-  const hMetricInfo={to:{lab:"Taux de remplissage",fmt:(v)=>pct(v),unit:"%"},
-    adr:{lab:"Prix moyen chambre (ADR)",fmt:(v)=>eur2(v),unit:"€"},
-    revpar:{lab:"Revenu par chambre (RevPAR)",fmt:(v)=>eur2(v),unit:"€"}};
-  const YCOL=["#8B9683","#B5A18E","#C77B6B","#7A8CA3","#B8935A"];
+  const hAllMonths=useMemo(()=>Object.values(hStore).flatMap(y=>y.months||[]),[hStore]);
+  const hCmpMoisAvail=useMemo(()=>[...new Set(hAllMonths.map(m=>m.mois))].sort((a,b)=>a-b),[hAllMonths]);
+  const hCmpMois=hCmpMonth||(hCmpMoisAvail.length?hCmpMoisAvail[hCmpMoisAvail.length-1]:0);
+  const hCmpEntries=useMemo(()=>hAllMonths.filter(m=>m.mois===hCmpMois).sort((a,b)=>b.annee-a.annee),[hAllMonths,hCmpMois]);
+  const hCmpRows=[
+    {lab:"Taux de remplissage",get:m=>m.to,fmt:v=>pct(v),unit:" pts"},
+    {lab:"Prix moyen chambre (ADR)",get:m=>m.adr,fmt:v=>eur2(v),unit:" €"},
+    {lab:"Revenu par chambre (RevPAR)",get:m=>m.revpar,fmt:v=>eur2(v),unit:" €"},
+    {lab:"Nuitées vendues",get:m=>m.vend,fmt:v=>num(v),unit:""},
+    {lab:"Nuitées disponibles",get:m=>m.dispo,fmt:v=>num(v),unit:""},
+    {lab:"Durée moyenne de séjour",get:m=>m.dms,fmt:v=>v.toLocaleString("fr-FR",{maximumFractionDigits:2})+" nuits",unit:" nuits"},
+    {lab:"Arrivées",get:m=>m.arr,fmt:v=>num(v),unit:""},
+    {lab:"Personnes accueillies",get:m=>m.pers,fmt:v=>num(v),unit:""},
+  ];
 
   /* ---- Export xlsx ---- */
   const exportXlsx=()=>{
@@ -852,6 +924,7 @@ export default function App(){
       {l:"Restauration",v:r2(caResto),t:"row"},{l:"Bar",v:r2(caBar),t:"row"},
       {l:"Hôtel",v:r2(caHotel),t:"row"},{l:"Petit déjeuner",v:r2(caPdej),t:"row"},
       {l:"Événements",v:r2(caEvt),t:"row"},{l:"Autres / Divers",v:r2(caAutres),t:"row"},{l:"Total CA HT",v:r2(CA),t:"tot"},
+      {l:"Autres produits d'exploitation",v:r2(P.autres_produits),t:"row"},
       {l:"CHARGES VARIABLES",t:"sec"},
       {l:"Coût matières",v:r2(P.matieres),t:"row"},{l:"Consommables variables",v:r2(P.conso_var),t:"row"},
       {l:"Commissions plateformes",v:r2(P.comm_var),t:"row"},{l:"Frais bancaires variables (CB)",v:r2(P.cb_var),t:"row"},
@@ -863,6 +936,7 @@ export default function App(){
       {l:"Honoraires",v:r2(P.honoraires),t:"row"},{l:"Télécom / Internet",v:r2(P.telecom),t:"row"},
       {l:"Frais bancaires fixes",v:r2(P.bq_fixe),t:"row"},{l:"Déplacements / réceptions",v:r2(P.deplacements),t:"row"},
       {l:"Impôts & taxes (hors IS)",v:r2(P.impots_fixe),t:"row"},{l:"Autres charges gestion courante",v:r2(P.autres_gc),t:"row"},
+      {l:"Autres charges d'exploitation",v:r2(P.autres_charges),t:"row"},
       {l:"Sous-total autres charges fixes",v:r2(CF_autres),t:"tot"},
       {l:"Salaires bruts",v:r2(P.salaires),t:"row"},{l:"URSSAF",v:r2(P.urssaf),t:"row"},
       {l:"Retraite",v:r2(P.retraite),t:"row"},{l:"Mutuelle / prévoyance",v:r2(P.mutuelle),t:"row"},
@@ -926,6 +1000,7 @@ export default function App(){
       ["CHIFFRE D'AFFAIRES HT","",S],
       ["Restauration",caResto],["Bar",caBar],["Hôtel",caHotel],["Petit déjeuner",caPdej],["Événements",caEvt],["Autres / Divers",caAutres],
       ["Total CA HT",CA,T],
+      ["Autres produits d'exploitation",P.autres_produits],
       ["CHARGES VARIABLES","",S],
       ["Coût matières",P.matieres],["Autres charges variables",autresVar],["Total charges variables",CV,T],
       ["CHARGES FIXES","",S],
@@ -1017,6 +1092,18 @@ export default function App(){
 
       {/* ========== COMPTE DE RÉSULTAT ========== */}
       {tab==="cr"&&<>
+        {alertes.length>0&&<div className="card" style={{borderLeft:"3px solid #C77B6B"}}>
+          <h3 style={{color:"#C77B6B"}}>⚠ Points de vigilance — chiffres à vérifier</h3>
+          <p className="sub">Ces montants paraissent inhabituels. Vérifiez-les, et corrigez-les si besoin directement sur la ligne concernée du compte de résultat (les valeurs sont modifiables).</p>
+          <table className="tbl" style={{marginTop:10}}>
+            <thead><tr><th>Poste</th><th style={{textAlign:"right"}}>Montant lu</th><th>Pourquoi</th></tr></thead>
+            <tbody>{alertes.map((a,i)=>(<tr key={i}>
+              <td style={{fontWeight:600}}>{a.lab}</td>
+              <td style={{textAlign:"right",fontWeight:700,color:"#C77B6B"}} className="num">{eur(a.val)}</td>
+              <td className="mini">{a.msg}</td>
+            </tr>))}</tbody>
+          </table>
+        </div>}
         <div className="card">
           <h3>Import de la balance</h3>
           <p className="sub">Déposez la balance en <b>PDF</b> (lue automatiquement) ou en Excel. Le regroupement suit le Plan Comptable Général.</p>
@@ -1045,7 +1132,15 @@ export default function App(){
             what="l'export caisse (.xlsx)"
             hint="Export statistiques Jalia (.xlsx) avec colonnes parent / HT"/>
           {jalia&&jalia.error&&<div className="hint warn" style={{marginTop:12}}><Info size={16}/><span>{jalia.error}</span></div>}
-          {jalia&&!jalia.error&&<>
+          {caisseMemePeriode===false&&<div className="hint warn" style={{marginTop:12}}><Info size={16}/>
+            <span><b>Périodes différentes :</b> la caisse importée porte sur <b>{MOIS[caissePeriode.mois]} {caissePeriode.annee}</b>, alors que la balance est sur <b>{MOIS[mois]} {annee}</b>. Le rapprochement mélangerait deux mois — vérifiez que les deux fichiers couvrent la même période.</span></div>}
+          {caisseMemePeriode===true&&<div className="hint" style={{marginTop:12}}><Info size={16}/>
+            <span>Caisse et balance sur la même période : <b>{MOIS[mois]} {annee}</b>.</span></div>}
+          {jalia&&!jalia.error&&!caissePeriode&&moisDetecte&&<div className="hint" style={{marginTop:12}}><Info size={16}/>
+            <span>Impossible de lire la période dans le nom du fichier caisse — vérifiez vous-même qu'il couvre bien {MOIS[mois]} {annee} (la période de la balance).</span></div>}
+          {jaliaVide&&<div className="hint warn" style={{marginTop:12}}><Info size={16}/>
+            <span><b>Caisse vide</b> ({eur2(caisseTotal)}) alors que la balance porte <b>{eur2(compta70)}</b> de CA bar-restaurant / événements — probablement un <b>mois de fermeture</b>. Pour ne pas afficher un CA faux, ces postes sont <b>repris de la balance</b> pour ce mois (l'hôtel et le petit-déj le sont toujours).</span></div>}
+          {jalia&&!jalia.error&&!jaliaVide&&<>
             <table className="tbl" style={{marginTop:14}}>
               <thead><tr><th>Famille</th><th>Catégorie</th><th>CA HT</th></tr></thead>
               <tbody>
@@ -1071,9 +1166,9 @@ export default function App(){
             <div className="ifield"><label>Taux IS (%)</label><input type="number" value={tauxIS} onChange={e=>setTauxIS(+e.target.value)}/></div>
             <div style={{flex:1}}/>
             {Object.keys(ov).length>0&&<button className="btn ghost" onClick={()=>setOv({})}><RotateCcw size={14}/> Réinitialiser</button>}
-            <button className="btn pri" onClick={exportPdf} disabled={!CA}><FileText size={14}/> Bilan du mois (PDF)</button>
+            <button className="btn pri" onClick={exportPdf} disabled={!bal&&!jalia&&!CA}><FileText size={14}/> Bilan du mois (PDF)</button>
             <button className="btn ghost" onClick={exportXlsx}><Download size={14}/> Excel</button>
-            <button className="btn" onClick={addMonth} disabled={!CA}><Plus size={14}/> Ajouter au tableau</button>
+            <button className="btn" onClick={addMonth} disabled={!bal&&!jalia&&!CA}><Plus size={14}/> Ajouter au tableau</button>
           </div>
 
           <table className="pnl"><tbody>
@@ -1085,6 +1180,9 @@ export default function App(){
             <Row k="ca_evt" label="CA Événements" cpt={J?"caisse":"analytique"} auto={caEvt}/>
             <Row k="ca_autres" label="CA Autres / Divers" cpt={J?"caisse":"—"} auto={caAutres}/>
             <Line label="TOTAL CA HT" v={CA} cls="sub"/>
+
+            <tr className="sec"><td colSpan={3}>Autres produits d'exploitation</td></tr>
+            <Row k="autres_produits" label="Autres produits (avantages en nature, subventions, divers…)" cpt="74·75·78" auto={P.autres_produits}/>
 
             <tr className="sec"><td colSpan={3}>Charges variables HT</td></tr>
             <Row k="matieres" label="Matières premières" cpt="601·602·607" auto={P.matieres}/>
@@ -1107,6 +1205,7 @@ export default function App(){
             <Row k="deplacements" label="Déplacements / réceptions" cpt="625" auto={P.deplacements}/>
             <Row k="impots_fixe" label="Impôts & taxes (hors IS)" cpt="635·637" auto={P.impots_fixe}/>
             <Row k="autres_gc" label="Autres charges de gestion courante" cpt="65" auto={P.autres_gc}/>
+            <Row k="autres_charges" label="Autres charges d'exploitation" cpt="604·605·611·612…" auto={P.autres_charges}/>
             <Line label="Sous-total autres charges fixes" v={CF_autres} cls="sub"/>
 
             <tr className="sec"><td colSpan={3}>Masse salariale & charges sociales</td></tr>
@@ -1123,7 +1222,9 @@ export default function App(){
             <Line label="Excédent brut d'exploitation (EBE)" v={EBE}/>
             <Row k="dotations" label="Dotations aux amortissements" cpt="68" auto={P.dotations}/>
             <Line label="Résultat d'exploitation" v={RES_EXPL} cls="sub"/>
+            <Row k="prod_fin" label="Produits financiers" cpt="76" auto={P.prod_fin}/>
             <Row k="charges_fin" label="Charges financières (intérêts…)" cpt="66" auto={P.charges_fin}/>
+            <Row k="prod_except" label="Produits exceptionnels" cpt="77" auto={P.prod_except}/>
             <Row k="charges_except" label="Charges exceptionnelles" cpt="67" auto={P.charges_except}/>
             <Line label="Résultat avant impôt" v={RAI} cls="sub"/>
             <Line label={`Impôt sur les sociétés (${tauxIS} %)`} v={-IS}/>
@@ -1137,9 +1238,26 @@ export default function App(){
           <div className="hint"><Info size={16}/>
             <span>Restauration / Bar / Événements / Autres viennent de la caisse Jalia si importée (sinon à saisir) ; Hôtel et Petit déj de la balance. Chaque ligne reste modifiable, et les ratios utilisent le CA total.</span></div>
         </div>
-      </>}
 
-      {/* ========== TABLEAU ANNUEL ========== */}
+        {seuilRenta!=null&&<div className="card">
+          <h3>Seuil de rentabilité</h3>
+          <div className="kpi-grid" style={{marginBottom:12}}>
+            <div className="kpi"><div className="lab">Seuil de rentabilité (CA à atteindre)</div>
+              <div className="val num" style={{color:"var(--ink)"}}>{eur(seuilRenta)}</div>
+              <div className="mini">de chiffre d'affaires HT sur le mois</div></div>
+            <div className="kpi"><div className="lab">Votre CA du mois</div>
+              <div className="val num">{eur(CA)}</div>
+              <div className="mini">{margeSecurite>=0?"au-dessus du seuil":"en dessous du seuil"}</div></div>
+            <div className="kpi"><div className="lab">Marge de sécurité</div>
+              <div className="val num" style={{color:margeSecurite>=0?"var(--sage)":"#C77B6B"}}>{margeSecurite>=0?"+":""}{eur(margeSecurite)}</div>
+              <div className="mini">{tauxMargeSecurite>=0?"+":""}{pct(tauxMargeSecurite)} vs le seuil</div></div>
+          </div>
+          <div className="hint"><Info size={16}/>
+            <span><b>Ce que ça veut dire :</b> sur chaque euro vendu, une fois payés les coûts qui varient avec l'activité (matières, commissions…), il reste <b>{pct(tauxMCV*100)}</b> pour couvrir vos charges fixes (loyer, salaires, assurances…). Il vous faut donc <b>{eur(seuilRenta)}</b> de ventes pour couvrir ces {eur(chargesFixesTot)} de charges fixes : en dessous, vous perdez de l'argent ; au-dessus, vous en gagnez.
+            {margeSecurite<0&&<> Ce mois, vous êtes <b>{eur(-margeSecurite)}</b> sous le seuil.</>}
+            {" "}Pour un établissement <b>saisonnier</b>, un mois d'hiver sous le seuil est normal — c'est la pleine saison qui doit compenser. Le plus parlant est de regarder ce seuil sur la <b>saison entière</b> (onglet Cumul annuel une fois plusieurs mois enregistrés).</span></div>
+        </div>}
+      </>}
       {tab==="annuel"&&<>
         <div className="card">
           <div className="toolbar" style={{marginBottom:0}}>
@@ -1156,7 +1274,7 @@ export default function App(){
           <p className="mini" style={{marginTop:12}}>
             {archived
               ? <><Lock size={12} style={{verticalAlign:"-2px"}}/> Exercice archivé — lecture seule. Consultable et exportable, mais plus modifiable.</>
-              : <>{suivi.length} mois enregistré{suivi.length>1?"s":""}. Depuis « Compte de résultat », cliquez « Ajouter au tableau » après chaque import.</>}
+              : <>{suivi.length} mois enregistré{suivi.length>1?"s":""} · montants en k€ (détail exact dans le compte de résultat mensuel et l'export Excel). Depuis « Compte de résultat », cliquez « Ajouter au tableau » après chaque import.</>}
             {" · "}{memOK
               ? "Mémorisation automatique active : vos données sont conservées à la fermeture."
               : "⚠ Mémorisation auto indisponible sur ce poste — utilisez la sauvegarde manuelle ci-dessous."}
@@ -1173,11 +1291,11 @@ export default function App(){
         {suivi.length===0
           ? <div className="card"><div className="hint"><CalendarDays size={16}/>
               <span>Exercice {exYear} vide. Importez une balance, vérifiez le compte de résultat, puis cliquez « Ajouter au tableau » — chaque mois viendra remplir une colonne ici.</span></div></div>
-          : <div className="card" style={{overflowX:"auto"}}>
-              <table className="pnl" style={{minWidth:520}}><tbody>
+          : <div className="card hscroll">
+              <table className="pnl compact" style={{width:"100%"}}><tbody>
                 <tr className="sec">
                   <td style={{position:"sticky",left:0}}>Poste</td>
-                  {suivi.map(m=>(<td key={m.key} style={{textAlign:"right",textTransform:"none",letterSpacing:0}}>
+                  {suivi.map(m=>(<td key={m.key} style={{textAlign:"right",textTransform:"none",letterSpacing:0,whiteSpace:"nowrap"}}>
                     {m.label}
                     {!archived&&<span onClick={()=>removeMonth(m.key)} title="Retirer ce mois"
                       style={{cursor:"pointer",marginLeft:6,opacity:.8}}>✕</span>}
@@ -1189,8 +1307,8 @@ export default function App(){
                   const cum=vs.reduce((a,b)=>a+b,0);
                   return(<tr key={k} className={cls==="res"?"res":cls==="sub"?"sub":""}>
                     <td className="lbl" style={{position:"sticky",left:0,background:cls?"inherit":"var(--card)"}}>{label}</td>
-                    {vs.map((v,i)=><td key={i} className="amt num" style={{width:"auto"}}>{eur(v)}</td>)}
-                    <td className="amt num" style={{width:"auto",fontWeight:700}}>{eur(cum)}</td>
+                    {vs.map((v,i)=><td key={i} className="amt num" style={{width:"auto"}}>{eurK(v)}</td>)}
+                    <td className="amt num" style={{width:"auto",fontWeight:700}}>{eurK(cum)}</td>
                   </tr>);
                 })}
               </tbody></table>
@@ -1218,8 +1336,8 @@ export default function App(){
         </div>
 
         {cmpEntries.length>=1&&
-          <div className="card" style={{overflowX:"auto"}}>
-            <table className="pnl" style={{minWidth:520}}><tbody>
+          <div className="card hscroll">
+            <table className="pnl compact" style={{width:"100%"}}><tbody>
               <tr className="sec">
                 <td style={{position:"sticky",left:0}}>Poste</td>
                 {cmpEntries.map(e=>(<td key={e.annee} style={{textAlign:"right",textTransform:"none",letterSpacing:0}}>{MOIS[cmpMonth].slice(0,3)} {e.annee}</td>))}
@@ -1302,14 +1420,14 @@ export default function App(){
                 className={"btn "+(curveRatio===k?"pri":"ghost")} style={{padding:"7px 12px"}}>{RATIO_LABELS[k]}</button>))}
           </div>
           <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={curveData} margin={{top:8,right:12,left:0,bottom:0}}>
+            <ComposedChart data={curveData} margin={{top:8,right:12,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
               <XAxis dataKey="label" tick={{fontSize:11,fill:"#7A7268"}}/>
               <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+"%"}/>
               <Tooltip formatter={v=>pct(v)} labelStyle={{fontWeight:700}}/>
-              <Line type="monotone" dataKey="val" name={RATIO_LABELS[curveRatio]} stroke="#8B9683" strokeWidth={2.5}
+              <RLine type="monotone" dataKey="val" name={RATIO_LABELS[curveRatio]} stroke="#8B9683" strokeWidth={2.5}
                 dot={{r:3,fill:"#8B9683"}} activeDot={{r:5}}/>
-            </LineChart>
+            </ComposedChart>
           </ResponsiveContainer>
         </div>}
       </>}
@@ -1374,6 +1492,26 @@ export default function App(){
         {hotel.rev>0&&<div className="hint"><Info size={16}/>
           <span><b>Prix moyen de la chambre (ADR)</b> : ce qu'a rapporté en moyenne une chambre <i>occupée</i>. <b>Revenu par chambre (RevPAR)</b> : le même revenu réparti sur <i>toutes</i> vos chambres, y compris celles restées vides — c'est l'indicateur de performance réelle. Comme au cinéma : le premier est le prix moyen du billet vendu, le second la recette rapportée à tous les fauteuils de la salle.</span></div>}
 
+        {(()=>{
+          const memePeriode=pms&&moisDetecte&&(pms.mois-1)===mois&&pms.annee===annee;
+          if(!hotel||hotel.dispo<=0)return null;
+          if(!memePeriode) return (<div className="card"><h3>Performance globale par chambre</h3>
+            <div className="hint"><Info size={16}/><span>Importez la <b>balance du même mois</b> (onglet « Compte de résultat ») pour voir, en plus du RevPAR, le <b>revenu total</b> et le <b>bénéfice</b> par chambre disponible (restauration comprise). {pms&&moisDetecte?`Actuellement la balance porte sur un autre mois que l'export hôtel.`:""}</span></div></div>);
+          const trevpar=CA/hotel.dispo, goppar=EBE/hotel.dispo;
+          return (<div className="card"><h3>Performance globale par chambre (avec la restauration)</h3>
+            <div className="kpi-grid" style={{marginBottom:12}}>
+              <div className="kpi"><div className="lab">RevPAR — revenu chambres</div>
+                <div className="val num">{eur2(hotel.revpar)}</div><div className="mini">hébergement seul</div></div>
+              <div className="kpi"><div className="lab">TRevPAR — revenu total</div>
+                <div className="val num" style={{color:"var(--sage)"}}>{eur2(trevpar)}</div><div className="mini">hébergement + restauration + tout le reste</div></div>
+              <div className="kpi"><div className="lab">GOPPAR — bénéfice</div>
+                <div className="val num" style={{color:goppar>=0?"var(--sage)":"#C77B6B"}}>{eur2(goppar)}</div><div className="mini">résultat (EBE) par chambre disponible</div></div>
+            </div>
+            <div className="hint"><Info size={16}/>
+              <span>Ces trois indicateurs ramènent tout au <b>nombre de chambres disponibles</b> ({num(hotel.dispo)} chambres-nuits ce mois), pour comparer des mois entre eux quelle que soit la période. Le <b>RevPAR</b> ne compte que le revenu des chambres. Le <b>TRevPAR</b> (« revenu total par chambre disponible ») rapporte <i>tout</i> le chiffre d'affaires de l'établissement — hébergement, restaurant, bar, événements — à chaque chambre disponible : {eur2(trevpar)}, un niveau logiquement bien supérieur au RevPAR dans une maison où la restauration pèse lourd. Le <b>GOPPAR</b> (« bénéfice par chambre disponible ») va au bout : il rapporte le <i>résultat</i> (l'EBE) à chaque chambre — ce qui reste réellement une fois les charges payées. C'est l'indicateur que suivent les hôtels haut de gamme, rarement calculé pour un établissement de cette taille. (RevPAR issu de l'export hôtel ; TRevPAR et GOPPAR de la balance — mêmes chambres disponibles.)</span></div>
+          </div>);
+        })()}
+
         <div className="card"><h3>Remplissage jour par jour</h3>
           <p className="sub">Chaque barre est une journée. Les creux se repèrent d'un coup d'oeil.</p>
           <ResponsiveContainer width="100%" height={260}>
@@ -1413,7 +1551,7 @@ export default function App(){
         </div>
 
         <div className="card"><h3>Détail des journées</h3>
-          <div style={{overflowX:"auto"}}><table className="tbl">
+          <div className="hscroll"><table className="tbl">
             <thead><tr><th>Date</th><th>Jour</th><th style={{textAlign:"right"}}>Chambres occupées</th>
               <th style={{textAlign:"right"}}>Remplissage</th><th style={{textAlign:"right"}}>Arrivées</th>
               <th style={{textAlign:"right"}}>Personnes</th><th style={{textAlign:"right"}}>Hors service</th></tr></thead>
@@ -1489,19 +1627,19 @@ export default function App(){
             </div>
             <div className="card"><h3>Prix moyen (ADR) et revenu par chambre (RevPAR) par mois</h3>
               <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={hCumul.curve} margin={{top:8,right:12,left:0,bottom:0}}>
+                <ComposedChart data={hCumul.curve} margin={{top:8,right:12,left:0,bottom:0}}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
                   <XAxis dataKey="label" tick={{fontSize:11,fill:"#7A7268"}}/>
                   <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+"€"}/>
                   <Tooltip formatter={v=>eur2(v)} labelStyle={{fontWeight:700}}/>
-                  <Line type="monotone" dataKey="adr" name="ADR" stroke="#B5A18E" strokeWidth={2.5} dot={{r:4,fill:"#B5A18E",stroke:"#fff",strokeWidth:1}} isAnimationActive={false}/>
-                  <Line type="monotone" dataKey="revpar" name="RevPAR" stroke="#8B9683" strokeWidth={2.5} dot={{r:4,fill:"#8B9683",stroke:"#fff",strokeWidth:1}} isAnimationActive={false}/>
-                </LineChart>
+                  <RLine type="monotone" dataKey="adr" name="ADR" stroke="#B5A18E" strokeWidth={2.5} dot={{r:4,fill:"#B5A18E",stroke:"#fff",strokeWidth:1}} isAnimationActive={false}/>
+                  <RLine type="monotone" dataKey="revpar" name="RevPAR" stroke="#8B9683" strokeWidth={2.5} dot={{r:4,fill:"#8B9683",stroke:"#fff",strokeWidth:1}} isAnimationActive={false}/>
+                </ComposedChart>
               </ResponsiveContainer>
               <div className="legend"><span><i style={{background:"var(--taupe)"}}></i>ADR</span><span><i style={{background:"var(--sage)"}}></i>RevPAR</span></div>
             </div>
             <div className="card"><h3>Détail des mois</h3>
-              <div style={{overflowX:"auto"}}><table className="tbl">
+              <div className="hscroll"><table className="tbl">
                 <thead><tr><th>Mois</th><th style={{textAlign:"right"}}>Remplissage</th><th style={{textAlign:"right"}}>ADR</th><th style={{textAlign:"right"}}>RevPAR</th><th style={{textAlign:"right"}}>Nuitées</th><th></th></tr></thead>
                 <tbody>{hCumul.months.map((m,i)=>(<tr key={i}>
                   <td>{m.label}</td>
@@ -1518,44 +1656,35 @@ export default function App(){
 
         {hTab==="comparatif"&&<>
           <div className="card"><div className="toolbar" style={{marginBottom:0}}>
-            <div className="ifield" style={{minWidth:220}}><label>Indicateur comparé</label>
-              <select value={hMetric} onChange={e=>setHMetric(e.target.value)}>
-                <option value="to">Taux de remplissage</option>
-                <option value="adr">Prix moyen chambre (ADR)</option>
-                <option value="revpar">Revenu par chambre (RevPAR)</option>
+            <div className="ifield" style={{minWidth:200}}><label>Mois à comparer</label>
+              <select value={hCmpMois} onChange={e=>setHCmpMonth(+e.target.value)}>
+                {(hCmpMoisAvail.length?hCmpMoisAvail:[hCmpMois]).map(mo=><option key={mo} value={mo}>{MOIS[mo-1]}</option>)}
               </select></div>
           </div>
-          <p className="mini" style={{marginTop:12}}>{hCmp&&hCmp.years.length>1 ? "Comparaison de "+hCmp.years.join(" · ")+", mois par mois." : "Ajoutez au moins deux saisons (onglet « Mois ») pour comparer une année sur l'autre."}</p>
+          <p className="mini" style={{marginTop:12}}>{hCmpEntries.length>1
+            ? `${MOIS[hCmpMois-1]} comparé sur ${hCmpEntries.length} saisons : ${hCmpEntries.map(e=>e.annee).join(" · ")}.`
+            : `Ajoutez le mois de ${MOIS[hCmpMois-1]} sur au moins deux saisons (onglet « Mois ») pour le comparer d'une année sur l'autre.`}</p>
           </div>
 
-          {hCmp&&hCmp.rows.length>0&&<>
-            <div className="card"><h3>{hMetricInfo[hMetric].lab} — par mois</h3>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={hCmp.rows} margin={{top:8,right:12,left:0,bottom:0}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#E7E0D6" vertical={false}/>
-                  <XAxis dataKey="mois" tick={{fontSize:11,fill:"#7A7268"}}/>
-                  <YAxis tick={{fontSize:11,fill:"#7A7268"}} tickFormatter={v=>v+hMetricInfo[hMetric].unit} domain={hMetric==="to"?[0,100]:["auto","auto"]}/>
-                  <Tooltip formatter={v=>hMetricInfo[hMetric].fmt(v)} labelStyle={{fontWeight:700}}/>
-                  {hCmp.years.map((y,i)=><Line key={y} type="monotone" dataKey={y} name={y} stroke={YCOL[i%YCOL.length]} strokeWidth={2.5} dot={{r:4,fill:YCOL[i%YCOL.length],stroke:"#fff",strokeWidth:1}} isAnimationActive={false} connectNulls/>)}
-                </LineChart>
-              </ResponsiveContainer>
-              <div className="legend">{hCmp.years.map((y,i)=><span key={y}><i style={{background:YCOL[i%YCOL.length]}}></i>{y}</span>)}</div>
-            </div>
-            <div className="card"><h3>Détail — {hMetricInfo[hMetric].lab}</h3>
-              <div style={{overflowX:"auto"}}><table className="tbl">
-                <thead><tr><th>Mois</th>{hCmp.years.map(y=><th key={y} style={{textAlign:"right"}}>{y}</th>)}{hCmp.years.length>1&&<th style={{textAlign:"right"}}>Écart {hCmp.years[0]}→{hCmp.years[hCmp.years.length-1]}</th>}</tr></thead>
-                <tbody>{hCmp.rows.map((r,i)=>{
-                  const oldY=hCmp.years[0], newY=hCmp.years[hCmp.years.length-1];
-                  const d=(r[oldY]!=null&&r[newY]!=null)?r[newY]-r[oldY]:null;
-                  return(<tr key={i}>
-                    <td>{r.mois}</td>
-                    {hCmp.years.map(y=><td key={y} style={{textAlign:"right"}} className="num">{r[y]!=null?hMetricInfo[hMetric].fmt(r[y]):"—"}</td>)}
-                    {hCmp.years.length>1&&<td style={{textAlign:"right",fontWeight:600,color:d==null?"#9a9a9a":d>=0?"var(--sage)":"#C77B6B"}} className="num">{d==null?"—":(d>=0?"+":"")+hMetricInfo[hMetric].fmt(d)}</td>}
-                  </tr>);
-                })}</tbody>
-              </table></div>
-            </div>
-          </>}
+          {hCmpEntries.length>0&&<div className="card"><h3>{MOIS[hCmpMois-1]} — comparaison d'une année sur l'autre</h3>
+            <div className="hscroll"><table className="tbl">
+              <thead><tr><th>Indicateur</th>
+                {hCmpEntries.map(e=><th key={e.annee} style={{textAlign:"right"}}>{e.annee}</th>)}
+                {hCmpEntries.length>1&&<th style={{textAlign:"right"}}>Évolution {hCmpEntries[1].annee}→{hCmpEntries[0].annee}</th>}
+              </tr></thead>
+              <tbody>{hCmpRows.map((r,i)=>{
+                const recent=hCmpEntries[0], prev=hCmpEntries[1];
+                const d=(prev)?r.get(recent)-r.get(prev):null;
+                return(<tr key={i}>
+                  <td>{r.lab}</td>
+                  {hCmpEntries.map(e=><td key={e.annee} style={{textAlign:"right"}} className="num">{r.fmt(r.get(e))}</td>)}
+                  {hCmpEntries.length>1&&<td style={{textAlign:"right",fontWeight:600,color:d==null?"#9a9a9a":d>=0?"var(--sage)":"#C77B6B"}} className="num">{d==null?"—":(d>=0?"+":"")+(r.unit===" pts"?d.toLocaleString("fr-FR",{maximumFractionDigits:1})+" pts":r.unit===" nuits"?d.toLocaleString("fr-FR",{maximumFractionDigits:2})+" nuits":r.unit===" €"?eur2(d):num(d))}</td>}
+                </tr>);
+              })}</tbody>
+            </table></div>
+            {hCmpEntries.length>1&&<div className="hint" style={{marginTop:12}}><Info size={16}/>
+              <span>La dernière colonne montre l'évolution de <b>{MOIS[hCmpMois-1]} {hCmpEntries[0].annee}</b> par rapport à <b>{MOIS[hCmpMois-1]} {hCmpEntries[1].annee}</b> — en vert si en hausse, en rouge si en baisse. C'est le bon réflexe pour un saisonnier : comparer un mois à ce même mois l'an dernier, pas à un autre mois de la saison.</span></div>}
+          </div>}
         </>}
       </>}
     </div></div>
