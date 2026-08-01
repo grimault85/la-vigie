@@ -1096,11 +1096,10 @@ export default function App(){
           <h3 style={{color:"#C77B6B"}}>⚠ Points de vigilance — chiffres à vérifier</h3>
           <p className="sub">Ces montants paraissent inhabituels. Vérifiez-les, et corrigez-les si besoin directement sur la ligne concernée du compte de résultat (les valeurs sont modifiables).</p>
           <table className="tbl" style={{marginTop:10}}>
-            <thead><tr><th>Poste</th><th style={{textAlign:"right"}}>Montant lu</th><th>Pourquoi</th></tr></thead>
+            <thead><tr><th>Poste</th><th style={{textAlign:"right"}}>Montant lu</th></tr></thead>
             <tbody>{alertes.map((a,i)=>(<tr key={i}>
               <td style={{fontWeight:600}}>{a.lab}</td>
               <td style={{textAlign:"right",fontWeight:700,color:"#C77B6B"}} className="num">{eur(a.val)}</td>
-              <td className="mini">{a.msg}</td>
             </tr>))}</tbody>
           </table>
         </div>}
@@ -1508,7 +1507,7 @@ export default function App(){
                 <div className="val num" style={{color:goppar>=0?"var(--sage)":"#C77B6B"}}>{eur2(goppar)}</div><div className="mini">résultat (EBE) par chambre disponible</div></div>
             </div>
             <div className="hint"><Info size={16}/>
-              <span>Ces trois indicateurs ramènent tout au <b>nombre de chambres disponibles</b> ({num(hotel.dispo)} chambres-nuits ce mois), pour comparer des mois entre eux quelle que soit la période. Le <b>RevPAR</b> ne compte que le revenu des chambres. Le <b>TRevPAR</b> (« revenu total par chambre disponible ») rapporte <i>tout</i> le chiffre d'affaires de l'établissement — hébergement, restaurant, bar, événements — à chaque chambre disponible : {eur2(trevpar)}, un niveau logiquement bien supérieur au RevPAR dans une maison où la restauration pèse lourd. Le <b>GOPPAR</b> (« bénéfice par chambre disponible ») va au bout : il rapporte le <i>résultat</i> (l'EBE) à chaque chambre — ce qui reste réellement une fois les charges payées. C'est l'indicateur que suivent les hôtels haut de gamme, rarement calculé pour un établissement de cette taille. (RevPAR issu de l'export hôtel ; TRevPAR et GOPPAR de la balance — mêmes chambres disponibles.)</span></div>
+              <span>Ces trois indicateurs ramènent tout au <b>nombre de chambres disponibles</b> ({num(hotel.dispo)} chambres-nuits ce mois), pour comparer des mois entre eux quelle que soit la période. Le <b>RevPAR</b> ne compte que le revenu des chambres. Le <b>TRevPAR</b> (« revenu total par chambre disponible ») rapporte <i>tout</i> le chiffre d'affaires de l'établissement — hébergement, restaurant, bar, événements — à chaque chambre disponible : {eur2(trevpar)}, un niveau logiquement bien supérieur au RevPAR dans une maison où la restauration pèse lourd. Le <b>GOPPAR</b> (« bénéfice par chambre disponible ») va au bout : il rapporte le <i>résultat</i> (l'EBE) à chaque chambre — ce qui reste réellement une fois les charges payées. (RevPAR issu de l'export hôtel ; TRevPAR et GOPPAR de la balance — mêmes chambres disponibles.)</span></div>
           </div>);
         })()}
 
