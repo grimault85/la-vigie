@@ -123,6 +123,7 @@ const MOISC = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct",
 const eur = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:0})+" €";
 const eur2 = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const pct = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %";
+const OBJ_DEFAUT={matieres:30,MS:35,prime:65,EBE:12,seuil:100,CA:0,loyer:0};
 const num = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:0});
 const eurK = (n)=>{ n=isFinite(n)?n:0; const a=Math.abs(n);
   if(a>=1e6) return (n/1e6).toLocaleString("fr-FR",{maximumFractionDigits:2})+" M€";
@@ -497,7 +498,7 @@ export default function App(){
   const [moisDetecte,setMoisDetecte]=useState(false);
   const [tauxIS,setTauxIS]=useState(25);
   // Magasin d'exercices : { exercices:{ "2025":{archived:false,months:[...]}, ... } }
-  const [store,setStore]=useState({exercices:{},hotel:{},objectifs:{matieres:30,MS:35,EBE:12,CA:0,loyer:0}});
+  const [store,setStore]=useState({exercices:{},hotel:{},objectifs:{...OBJ_DEFAUT}});
   const [exYear,setExYear]=useState(String(now.getFullYear()));
   const [memOK,setMemOK]=useState(true);
   const MEMKEY="pilotage_store_v1";
@@ -505,7 +506,7 @@ export default function App(){
   useEffect(()=>{
     try{
       const raw=window.localStorage.getItem(MEMKEY);
-      if(raw){const d=JSON.parse(raw);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},objectifs:d.objectifs||{matieres:30,MS:35,EBE:12,CA:0,loyer:0}});
+      if(raw){const d=JSON.parse(raw);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},objectifs:{...OBJ_DEFAUT,...(d.objectifs||{})}});
         const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);
         if(d.hotel){const hys=Object.keys(d.hotel).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}}
       // test d'écriture
@@ -650,8 +651,10 @@ export default function App(){
     {k:"CA",lab:"Chiffre d'affaires",mode:"eur",sens:"min",hint:"objectif de CA HT par mois"},
     {k:"matieres",lab:"Coût matières",mode:"pct",sens:"max",hint:"en % du CA · repère ≤ 30 %"},
     {k:"MS",lab:"Masse salariale",mode:"pct",sens:"max",hint:"en % du CA · repère ≤ 35 %"},
+    {k:"prime",lab:"Coût principal",mode:"pct",sens:"max",hint:"matières + personnel · repère ≤ 65 %"},
     {k:"loyer",lab:"Loyer",mode:"eur",sens:"max",hint:"objectif de loyer par mois"},
     {k:"EBE",lab:"Marge d'EBE",mode:"pct",sens:"min",hint:"en % du CA · repère ≥ 12 %"},
+    {k:"seuil",lab:"Couverture du seuil de rentabilité",mode:"pct",sens:"min",hint:"CA ÷ seuil · 100 % = charges fixes couvertes"},
   ];
   const objectifs=store.objectifs||{};
   const setObjectif=(k,v)=>setStore(s=>({...s,objectifs:{...(s.objectifs||{}),[k]:v}}));
@@ -660,11 +663,22 @@ export default function App(){
     const cfg=OBJDEF.find(o=>o.k===k); let cible=+objectifs[k]||0;
     if(!cible)return null;
     if(cfg.mode==="eur")cible=cible*months;
-    const actual=cfg.mode==="pct"?(ca>0?realVal/ca*100:0):realVal;
+    let actual;
+    if(k==="prime")      actual=ca>0?realVal/ca*100:0;      // realVal = matieres + MS
+    else if(k==="seuil") actual=realVal;                     // realVal = taux de couverture déjà calculé
+    else                 actual=cfg.mode==="pct"?(ca>0?realVal/ca*100:0):realVal;
     const diff=actual-cible;
     const status=cfg.sens==="max"?(actual<=cible?"good":actual<=cible*1.1?"warn":"bad")
                                  :(actual>=cible?"good":actual>=cible*0.9?"warn":"bad");
     return {cfg,cible,actual,diff,status};
+  };
+  // valeurs dérivées pour les objectifs calculés (CV et CF sont stockés par mois)
+  const objDerive=(d)=>{
+    if(!d)return d;
+    const ca=d.CA||0, cv=d.CV||0, cf=(d.CF||0)+(d.dotations||0);
+    const tx=ca>0?(ca-cv)/ca:0;
+    const seuilV=tx>0?cf/tx:0;
+    return {...d, prime:(d.matieres||0)+(d.MS||0), seuil:(seuilV>0&&ca>0)?ca/seuilV*100:0};
   };
   const objColor=(s)=>s==="good"?"var(--sage)":s==="warn"?"#C9A227":"#C77B6B";
   const fmtObjV=(mode,v)=>mode==="pct"?pct(v):eur(v);
@@ -672,9 +686,9 @@ export default function App(){
   const aucunObjectif=!OBJDEF.some(o=>(+objectifs[o.k]||0)>0);
   const objSuivi=(store.exercices?.[exYear]?.months)||[];
   const objMoisSel=objMonth||(objSuivi.length?objSuivi[objSuivi.length-1].key:"");
-  const objMoisData=objSuivi.find(m=>m.key===objMoisSel)?.vals||null;
+  const objMoisData=objDerive(objSuivi.find(m=>m.key===objMoisSel)?.vals||null);
   const objAnnual=objSuivi.length?(()=>{const s=k=>objSuivi.reduce((a,m)=>a+(m.vals?.[k]||0),0);
-    return {n:objSuivi.length,CA:s("CA"),matieres:s("matieres"),MS:s("MS"),loyer:s("loyer"),EBE:s("EBE")};})():null;
+    return objDerive({n:objSuivi.length,CA:s("CA"),matieres:s("matieres"),MS:s("MS"),loyer:s("loyer"),EBE:s("EBE"),CV:s("CV"),CF:s("CF"),dotations:s("dotations")});})():null;
   const objTable=(data,months)=>{
     if(!data)return null;
     const rows=OBJDEF.map(o=>{const r=evalObj(o.k,data[o.k]||0,data.CA||0,months);return r?{o,r}:null;}).filter(Boolean);
@@ -773,7 +787,7 @@ export default function App(){
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
     a.download=`pilotage_sauvegarde.json`;a.click();
   };
-  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},objectifs:d.objectifs||{matieres:30,MS:35,EBE:12,CA:0,loyer:0}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);const hys=Object.keys(d.hotel||{}).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
+  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},objectifs:{...OBJ_DEFAUT,...(d.objectifs||{})}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);const hys=Object.keys(d.hotel||{}).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
   const exportAnnual=()=>{
     const cols=suivi.map(m=>m.label);
     const ncols=cols.length+2;
@@ -1153,7 +1167,7 @@ export default function App(){
         {(bal||CA>0)&&!aucunObjectif&&<div className="card">
           <h3>Objectifs du mois</h3>
           <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:4}}>
-            {OBJDEF.map(o=>{const live={CA,matieres:P.matieres,MS,loyer:P.loyer,EBE};const r=evalObj(o.k,live[o.k],CA,1);if(!r)return null;
+            {OBJDEF.map(o=>{const live=objDerive({CA,matieres:P.matieres,MS,loyer:P.loyer,EBE,CV,CF,dotations:P.dotations});const r=evalObj(o.k,live[o.k],CA,1);if(!r)return null;
               return(<div key={o.k} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:10,background:"#F3EFE8",border:"1px solid #ECE6DC"}}>
                 <span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",background:objColor(r.status),flexShrink:0}}/>
                 <span style={{fontSize:13}}><b>{o.lab}</b> {fmtObjV(o.mode,r.actual)} <span style={{color:"var(--taupe)"}}>· cible {fmtObjV(o.mode,r.cible)}</span></span>
