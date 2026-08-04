@@ -131,36 +131,37 @@ const BUDGET_GROUPES=[
   ]},
   {g:"Personnel",postes:[
     {k:"salaires",lab:"Salaires bruts",cpt:"641·644"},
+  ]},
+  {g:"Charges pilotables",postes:[
+    {k:"energie",lab:"Énergie (élec., gaz, eau)",cpt:"6061"},
+    {k:"entretien",lab:"Entretien & réparations",cpt:"615"},
+    {k:"pub",lab:"Publicité & communication",cpt:"623"},
+    {k:"deplacements",lab:"Déplacements & réceptions",cpt:"625"},
+    {k:"honoraires",lab:"Honoraires (comptable, conseil)",cpt:"622"},
+    {k:"comm_var",lab:"Commissions (plateformes)",cpt:"6222"},
+    {k:"autres_charges",lab:"Sous-traitance & achats de prestations",cpt:"604·605·611·612"},
+  ]},
+];
+// Charges non budgétées : contractuelles ou mécaniques — affichées pour information (réel seul)
+const CHARGES_INFO=[
+  {g:"Charges fixes (contractuelles)",postes:[
+    {k:"loyer",lab:"Loyer",cpt:"6132·614"},
+    {k:"autres_loc",lab:"Autres locations",cpt:"613"},
+    {k:"assurances",lab:"Assurances",cpt:"616"},
+    {k:"telecom",lab:"Télécom & internet",cpt:"626"},
+    {k:"bq_fixe",lab:"Frais bancaires fixes",cpt:"627"},
+    {k:"impots_fixe",lab:"Impôts & taxes (hors IS)",cpt:"63"},
+    {k:"divers_fixe",lab:"Charges diverses",cpt:"617·618·628"},
+    {k:"autres_gc",lab:"Autres charges de gestion courante",cpt:"65"},
+    {k:"dotations",lab:"Dotations aux amortissements",cpt:"68"},
+  ]},
+  {g:"Charges liées aux salaires",postes:[
     {k:"urssaf",lab:"Cotisations URSSAF",cpt:"6451"},
     {k:"mutuelle",lab:"Mutuelle & prévoyance",cpt:"6452"},
     {k:"retraite",lab:"Retraite",cpt:"6453"},
     {k:"autres_orgs",lab:"Autres organismes sociaux",cpt:"645·647·648"},
     {k:"taxes_sal",lab:"Taxes sur salaires & formation",cpt:"631·633"},
-  ]},
-  {g:"Locaux & énergie",postes:[
-    {k:"loyer",lab:"Loyer",cpt:"6132·614"},
-    {k:"autres_loc",lab:"Autres locations",cpt:"613"},
-    {k:"entretien",lab:"Entretien & réparations",cpt:"615"},
-    {k:"assurances",lab:"Assurances",cpt:"616"},
-    {k:"energie",lab:"Énergie (élec., gaz, eau)",cpt:"6061"},
-  ]},
-  {g:"Services extérieurs & commercial",postes:[
-    {k:"honoraires",lab:"Honoraires (comptable, conseil)",cpt:"622"},
-    {k:"comm_var",lab:"Commissions (plateformes, CB)",cpt:"6222"},
     {k:"cb_var",lab:"Frais bancaires sur encaissements",cpt:"6272-6275"},
-    {k:"pub",lab:"Publicité & communication",cpt:"623"},
-    {k:"telecom",lab:"Télécom & internet",cpt:"626"},
-    {k:"deplacements",lab:"Déplacements & réceptions",cpt:"625"},
-    {k:"bq_fixe",lab:"Frais bancaires fixes",cpt:"627"},
-  ]},
-  {g:"Autres charges",postes:[
-    {k:"impots_fixe",lab:"Impôts & taxes (hors IS)",cpt:"63"},
-    {k:"divers_fixe",lab:"Charges diverses",cpt:"617·618·628"},
-    {k:"autres_gc",lab:"Autres charges de gestion courante",cpt:"65"},
-    {k:"autres_charges",lab:"Autres charges d'exploitation",cpt:"604·605·611·612"},
-  ]},
-  {g:"Amortissements",postes:[
-    {k:"dotations",lab:"Dotations aux amortissements",cpt:"68"},
   ]},
 ];
 const num = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:0});
@@ -1575,7 +1576,8 @@ export default function App(){
             </div>);
           })}
           <div className="hint"><Info size={16}/>
-            <span>Le budget matières peut être réparti entre <b>Restauration</b>, <b>Bar</b> et <b>Petit déjeuner</b> — le total sert de référence. En revanche, la balance comptable ne distingue pas ces trois activités sur les comptes d'achats : le <b>réel</b> ne peut donc être comparé qu'au <b>total matières</b>. Pour un suivi réel par activité, demandez à votre comptable de créer des sous-comptes d'achats distincts (par exemple 601100 restauration, 601200 bar, 601300 petits déjeuners).</span></div>
+            <span>Seules les charges que vous pouvez <b>piloter</b> ont un champ de saisie : matières, personnel, énergie, entretien, communication… Les charges <b>contractuelles ou mécaniques</b> (loyer, assurances, cotisations sociales, dotations, impôts) ne se budgètent pas — elles s'imposent à vous. Elles restent affichées dans le suivi, pour information, avec leur montant réel.<br/><br/>
+            Le budget matières peut être réparti entre <b>Restauration</b>, <b>Bar</b> et <b>Petit déjeuner</b> — le total sert de référence. En revanche, la balance comptable ne distingue pas ces trois activités sur les comptes d'achats : le <b>réel</b> ne peut être comparé qu'au <b>total matières</b>. Pour un suivi réel par activité, demandez à votre comptable de créer des sous-comptes d'achats distincts (par exemple 601100 restauration, 601200 bar, 601300 petits déjeuners).</span></div>
         </div>
 
         <div className="card"><h3>Budget vs réel — saison {exYear}</h3>
@@ -1623,12 +1625,30 @@ export default function App(){
                   </React.Fragment>);
                 })}
                 <tr style={{borderTop:"2px solid var(--taupe)"}}>
-                  <td></td><td style={{fontWeight:800}}>TOTAL CHARGES</td>
+                  <td></td><td style={{fontWeight:800}}>TOTAL CHARGES BUDGÉTÉES</td>
                   <td style={{textAlign:"right",fontWeight:800}} className="num">{eur(budTotal)}</td>
                   <td style={{textAlign:"right",fontWeight:800}} className="num">{eur(budReelTotal)}</td>
                   <td style={{textAlign:"right",fontWeight:800,color:(budTotal-budReelTotal)<0?"#C77B6B":"inherit"}} className="num">{eur(budTotal-budReelTotal)}</td>
                   <td style={{textAlign:"right",fontWeight:800,color:budCol(budEtat(budTotal,budReelTotal))}} className="num">{pct(budPart(budTotal,budReelTotal))}</td>
                 </tr>
+                {CHARGES_INFO.map(g=>{
+                  const lignes=g.postes.filter(p=>budReel(p.k)!==0);
+                  if(!lignes.length)return null;
+                  const rT=lignes.reduce((a,p)=>a+budReel(p.k),0);
+                  return (<React.Fragment key={g.g}>
+                    <tr><td colSpan={6} style={{background:"#F3EFE8",fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.3,color:"var(--taupe)"}}>{g.g} <span style={{textTransform:"none",fontWeight:400,letterSpacing:0}}>· pour information, non budgétées</span></td></tr>
+                    {lignes.map(p=>(<tr key={p.k}>
+                      <td></td><td style={{color:"var(--taupe)"}}>{p.lab}</td>
+                      <td style={{textAlign:"right",color:"var(--taupe)"}}>—</td>
+                      <td style={{textAlign:"right",fontWeight:600}} className="num">{eur(budReel(p.k))}</td>
+                      <td colSpan={2}></td>
+                    </tr>))}
+                    <tr><td></td><td style={{fontWeight:700,color:"var(--taupe)"}}>Sous-total {g.g}</td>
+                      <td style={{textAlign:"right",color:"var(--taupe)"}}>—</td>
+                      <td style={{textAlign:"right",fontWeight:700}} className="num">{eur(rT)}</td>
+                      <td colSpan={2}></td></tr>
+                  </React.Fragment>);
+                })}
                 </tbody>
               </table></div>
               <div className="hint" style={{marginTop:12}}><Info size={16}/>
