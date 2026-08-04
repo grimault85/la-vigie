@@ -125,7 +125,8 @@ const eur2 = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{minimumFractionDigit
 const pct = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %";
 const BUDGET_GROUPES=[
   {g:"Achats & matières",postes:[
-    {k:"matieres",lab:"Achats de matières premières",cpt:"601·602·603·607"},
+    {k:"matieres",lab:"Achats de matières premières",cpt:"601·602·603·607",
+     detail:[{k:"mat_resto",lab:"Restauration"},{k:"mat_bar",lab:"Bar"},{k:"mat_pdej",lab:"Petit déjeuner"}]},
     {k:"conso_var",lab:"Consommables & petit équipement",cpt:"606·624"},
   ]},
   {g:"Personnel",postes:[
@@ -687,21 +688,38 @@ export default function App(){
   /* ---- Budget annuel de charges vs réel ---- */
   const budgets=store.budgets||{};
   const budAnnee=exYear;
-  const budget=budgets[budAnnee]||{};
+  const budEntry=budgets[budAnnee]||{};
+  // compatibilité : ancien format = les postes étaient stockés à plat
+  const budget=budEntry.postes||(budEntry.locked===undefined?budEntry:{});
+  const budLocked=!!budEntry.locked;
+  const budLockedAt=budEntry.lockedAt||null;
   const setBudget=(k,v)=>setStore(s=>{
-    const b={...(s.budgets||{})}; b[budAnnee]={...(b[budAnnee]||{}),[k]:v};
+    const b={...(s.budgets||{})}; const cur=b[budAnnee]||{};
+    const postes={...(cur.postes||(cur.locked===undefined?cur:{})),[k]:v};
+    b[budAnnee]={postes,locked:!!cur.locked,lockedAt:cur.lockedAt||null};
     return {...s,budgets:b};
   });
+  const setBudLock=(val)=>setStore(s=>{
+    const b={...(s.budgets||{})}; const cur=b[budAnnee]||{};
+    const postes=cur.postes||(cur.locked===undefined?cur:{});
+    b[budAnnee]={postes,locked:val,lockedAt:val?new Date().toLocaleDateString("fr-FR"):null};
+    return {...s,budgets:b};
+  });
+  // budget d'un poste : somme du détail s'il est renseigné, sinon la valeur directe
+  const budGet=(p)=>{
+    if(p.detail){const s=p.detail.reduce((a,d)=>a+(+budget[d.k]||0),0); if(s>0)return s;}
+    return +budget[p.k]||0;
+  };
   const budSuivi=(store.exercices?.[budAnnee]?.months)||[];
   const budReel=(k)=>budSuivi.reduce((a,m)=>a+(m.vals?.[k]||0),0);
-  const budTotal=BUDGET_GROUPES.reduce((a,g)=>a+g.postes.reduce((x,p)=>x+(+budget[p.k]||0),0),0);
+  const budTotal=BUDGET_GROUPES.reduce((a,g)=>a+g.postes.reduce((x,p)=>x+budGet(p),0),0);
   const budReelTotal=BUDGET_GROUPES.reduce((a,g)=>a+g.postes.reduce((x,p)=>x+budReel(p.k),0),0);
   const budEtat=(bud,reel)=>{ if(!bud)return "none"; const t=reel/bud*100;
     return t>100?"bad":t>=90?"warn":"good"; };
   const budCol=(s)=>s==="bad"?"#C77B6B":s==="warn"?"#C9A227":s==="good"?"var(--sage)":"#9a9a9a";
   const budPart=(bud,reel)=>bud>0?reel/bud*100:0;
   const budDepassements=BUDGET_GROUPES.flatMap(g=>g.postes).map(p=>{
-    const b=+budget[p.k]||0; if(!b)return null; const r=budReel(p.k);
+    const b=budGet(p); if(!b)return null; const r=budReel(p.k);
     return r>b?{lab:p.lab,bud:b,reel:r,ecart:r-b}:null;
   }).filter(Boolean).sort((a,b)=>b.ecart-a.ecart);
   const aucunBudget=budTotal<=0;
@@ -1512,30 +1530,52 @@ export default function App(){
               {(Object.keys(store.exercices||{}).length?Object.keys(store.exercices).sort():[exYear]).map(y=><option key={y} value={y}>{y}</option>)}
             </select></div>
           <div style={{flex:1}}/>
-          <div style={{textAlign:"right"}}>
+          <div style={{textAlign:"right",marginRight:14}}>
             <div className="mini">Budget total des charges</div>
             <div className="num" style={{fontSize:20,fontWeight:700}}>{eur(budTotal)}</div>
           </div>
+          {budLocked
+            ? <button className="btn ghost" onClick={()=>{if(window.confirm(`Débloquer le budget ${budAnnee} pour le modifier ?`))setBudLock(false);}}><Lock size={14}/> Débloquer</button>
+            : <button className="btn pri" disabled={aucunBudget} onClick={()=>{if(window.confirm(`Valider le budget ${budAnnee} ? Il sera verrouillé — vous pourrez toujours le débloquer ensuite.`))setBudLock(true);}}><CheckCircle2 size={14}/> Valider le budget</button>}
         </div>
-        <p className="mini" style={{marginTop:12}}>Fixez le budget <b>annuel</b> de chaque poste de charge pour la saison {exYear}, puis suivez sa consommation au fil des mois que vous ajoutez au tableau annuel. Laissez à 0 un poste que vous ne souhaitez pas budgéter.</p>
+        {budLocked&&<div className="hint" style={{marginTop:12}}><Lock size={16}/>
+          <span><b>Budget {budAnnee} validé{budLockedAt?` le ${budLockedAt}`:""}.</b> Les montants sont verrouillés : le suivi se fait sur cette base de référence. Cliquez « Débloquer » pour les modifier.</span></div>}
+        <p className="mini" style={{marginTop:12}}>Fixez le budget <b>annuel</b> de chaque poste de charge pour la saison {exYear}, puis validez-le pour le figer. Le suivi compare ensuite le réel des mois enregistrés à ce budget. Laissez à 0 un poste que vous ne souhaitez pas budgéter.</p>
         </div>
 
         <div className="card"><h3>Mon budget {exYear}</h3>
           {BUDGET_GROUPES.map(g=>{
-            const sousTotal=g.postes.reduce((a,p)=>a+(+budget[p.k]||0),0);
+            const sousTotal=g.postes.reduce((a,p)=>a+budGet(p),0);
             return (<div key={g.g} style={{marginBottom:18}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",borderBottom:"1px solid #ECE6DC",paddingBottom:6,marginBottom:10}}>
                 <b style={{fontSize:13,letterSpacing:.3,textTransform:"uppercase",color:"var(--taupe)"}}>{g.g}</b>
                 <span className="num" style={{fontWeight:700}}>{eur(sousTotal)}</span>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:12}}>
-                {g.postes.map(p=>(<div key={p.k} className="ifield">
-                  <label>{p.lab} <span style={{textTransform:"none",letterSpacing:0,color:"var(--taupe)"}}>· {p.cpt}</span></label>
-                  <input type="number" value={budget[p.k]||0} onChange={e=>setBudget(p.k,+e.target.value)}/>
-                </div>))}
-              </div>
+              {g.postes.map(p=>p.detail?(
+                <div key={p.k} style={{marginBottom:12}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:6}}>
+                    <span style={{fontWeight:600,fontSize:13}}>{p.lab} <span style={{color:"var(--taupe)",fontWeight:400}}>· {p.cpt} · détail par activité</span></span>
+                    <span className="num" style={{fontWeight:600}}>{eur(budGet(p))}</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
+                    {p.detail.map(d=>(<div key={d.k} className="ifield">
+                      <label>{d.lab}</label>
+                      <input type="number" disabled={budLocked} value={budget[d.k]||0} onChange={e=>setBudget(d.k,+e.target.value)}/>
+                    </div>))}
+                  </div>
+                </div>
+              ):(
+                <div key={p.k} style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:12,marginBottom:12}}>
+                  <div className="ifield">
+                    <label>{p.lab} <span style={{textTransform:"none",letterSpacing:0,color:"var(--taupe)"}}>· {p.cpt}</span></label>
+                    <input type="number" disabled={budLocked} value={budget[p.k]||0} onChange={e=>setBudget(p.k,+e.target.value)}/>
+                  </div>
+                </div>
+              ))}
             </div>);
           })}
+          <div className="hint"><Info size={16}/>
+            <span>Le budget matières peut être réparti entre <b>Restauration</b>, <b>Bar</b> et <b>Petit déjeuner</b> — le total sert de référence. En revanche, la balance comptable ne distingue pas ces trois activités sur les comptes d'achats : le <b>réel</b> ne peut donc être comparé qu'au <b>total matières</b>. Pour un suivi réel par activité, demandez à votre comptable de créer des sous-comptes d'achats distincts (par exemple 601100 restauration, 601200 bar, 601300 petits déjeuners).</span></div>
         </div>
 
         <div className="card"><h3>Budget vs réel — saison {exYear}</h3>
@@ -1549,22 +1589,31 @@ export default function App(){
                 <thead><tr><th style={{width:22}}></th><th>Poste</th><th style={{textAlign:"right"}}>Budget annuel</th><th style={{textAlign:"right"}}>Réel cumulé</th><th style={{textAlign:"right"}}>Reste</th><th style={{textAlign:"right"}}>Consommé</th></tr></thead>
                 <tbody>
                 {BUDGET_GROUPES.map(g=>{
-                  const lignes=g.postes.filter(p=>(+budget[p.k]||0)>0||budReel(p.k)!==0);
+                  const lignes=g.postes.filter(p=>budGet(p)>0||budReel(p.k)!==0);
                   if(!lignes.length)return null;
-                  const bT=g.postes.reduce((a,p)=>a+(+budget[p.k]||0),0);
+                  const bT=g.postes.reduce((a,p)=>a+budGet(p),0);
                   const rT=g.postes.reduce((a,p)=>a+budReel(p.k),0);
                   return (<React.Fragment key={g.g}>
                     <tr><td colSpan={6} style={{background:"#F3EFE8",fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.3,color:"var(--taupe)"}}>{g.g}</td></tr>
                     {lignes.map(p=>{
-                      const b=+budget[p.k]||0, r=budReel(p.k), st=budEtat(b,r);
-                      return (<tr key={p.k}>
+                      const b=budGet(p), r=budReel(p.k), st=budEtat(b,r);
+                      return ([<tr key={p.k}>
                         <td><span style={{display:"inline-block",width:9,height:9,borderRadius:"50%",background:budCol(st)}}/></td>
                         <td>{p.lab}</td>
                         <td style={{textAlign:"right"}} className="num">{b?eur(b):"—"}</td>
                         <td style={{textAlign:"right",fontWeight:600}} className="num">{eur(r)}</td>
                         <td style={{textAlign:"right",color:b&&(b-r)<0?"#C77B6B":"inherit"}} className="num">{b?eur(b-r):"—"}</td>
                         <td style={{textAlign:"right",color:budCol(st),fontWeight:600}} className="num">{b?pct(budPart(b,r)):"—"}</td>
-                      </tr>);
+                      </tr>,
+                      ...(p.detail&&p.detail.some(d=>(+budget[d.k]||0)>0)
+                        ? p.detail.filter(d=>(+budget[d.k]||0)>0).map(d=>(
+                          <tr key={p.k+"-"+d.k}>
+                            <td></td>
+                            <td style={{paddingLeft:22,color:"var(--taupe)",fontSize:12.5}}>· dont {d.lab}</td>
+                            <td style={{textAlign:"right",color:"var(--taupe)"}} className="num">{eur(+budget[d.k]||0)}</td>
+                            <td style={{textAlign:"right",color:"var(--taupe)",fontSize:12}} colSpan={3}>réel non ventilable par la balance</td>
+                          </tr>))
+                        : [])]);
                     })}
                     <tr><td></td><td style={{fontWeight:700}}>Sous-total {g.g}</td>
                       <td style={{textAlign:"right",fontWeight:700}} className="num">{bT?eur(bT):"—"}</td>

@@ -1,7 +1,7 @@
 {
   "name": "la-vigie",
   "private": true,
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "La Vigie — logiciel de pilotage financier (compte de résultat, santé, taux de remplissage) pour l'hôtel-restaurant Le Noirmoutier. Application de bureau Mac & Windows.",
   "author": "La Vigie",
   "type": "module",

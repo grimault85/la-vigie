@@ -31,7 +31,7 @@ npm run dist:win
 ```
 
 Le fichier est généré dans `release/` :
-`La Vigie Setup 1.6.0.exe`
+`La Vigie Setup 1.7.0.exe`
 
 C'est l'installateur à distribuer. À l'installation, l'utilisateur peut choisir le dossier,
 et un raccourci « La Vigie » est créé.
@@ -49,7 +49,7 @@ npm run dist:mac
 ```
 
 Le fichier est généré dans `release/` :
-`La Vigie-1.6.0.dmg` (ou `.dmg` pour Intel/Apple Silicon selon la machine).
+`La Vigie-1.7.0.dmg` (ou `.dmg` pour Intel/Apple Silicon selon la machine).
 
 L'utilisateur ouvre le .dmg et glisse **La Vigie** dans Applications.
 
