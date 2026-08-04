@@ -123,7 +123,45 @@ const MOISC = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct",
 const eur = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:0})+" €";
 const eur2 = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const pct = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %";
-const OBJ_DEFAUT={matieres:30,MS:35,prime:65,EBE:12,seuil:100,CA:0,loyer:0};
+const BUDGET_GROUPES=[
+  {g:"Achats & matières",postes:[
+    {k:"matieres",lab:"Achats de matières premières",cpt:"601·602·603·607"},
+    {k:"conso_var",lab:"Consommables & petit équipement",cpt:"606·624"},
+  ]},
+  {g:"Personnel",postes:[
+    {k:"salaires",lab:"Salaires bruts",cpt:"641·644"},
+    {k:"urssaf",lab:"Cotisations URSSAF",cpt:"6451"},
+    {k:"mutuelle",lab:"Mutuelle & prévoyance",cpt:"6452"},
+    {k:"retraite",lab:"Retraite",cpt:"6453"},
+    {k:"autres_orgs",lab:"Autres organismes sociaux",cpt:"645·647·648"},
+    {k:"taxes_sal",lab:"Taxes sur salaires & formation",cpt:"631·633"},
+  ]},
+  {g:"Locaux & énergie",postes:[
+    {k:"loyer",lab:"Loyer",cpt:"6132·614"},
+    {k:"autres_loc",lab:"Autres locations",cpt:"613"},
+    {k:"entretien",lab:"Entretien & réparations",cpt:"615"},
+    {k:"assurances",lab:"Assurances",cpt:"616"},
+    {k:"energie",lab:"Énergie (élec., gaz, eau)",cpt:"6061"},
+  ]},
+  {g:"Services extérieurs & commercial",postes:[
+    {k:"honoraires",lab:"Honoraires (comptable, conseil)",cpt:"622"},
+    {k:"comm_var",lab:"Commissions (plateformes, CB)",cpt:"6222"},
+    {k:"cb_var",lab:"Frais bancaires sur encaissements",cpt:"6272-6275"},
+    {k:"pub",lab:"Publicité & communication",cpt:"623"},
+    {k:"telecom",lab:"Télécom & internet",cpt:"626"},
+    {k:"deplacements",lab:"Déplacements & réceptions",cpt:"625"},
+    {k:"bq_fixe",lab:"Frais bancaires fixes",cpt:"627"},
+  ]},
+  {g:"Autres charges",postes:[
+    {k:"impots_fixe",lab:"Impôts & taxes (hors IS)",cpt:"63"},
+    {k:"divers_fixe",lab:"Charges diverses",cpt:"617·618·628"},
+    {k:"autres_gc",lab:"Autres charges de gestion courante",cpt:"65"},
+    {k:"autres_charges",lab:"Autres charges d'exploitation",cpt:"604·605·611·612"},
+  ]},
+  {g:"Amortissements",postes:[
+    {k:"dotations",lab:"Dotations aux amortissements",cpt:"68"},
+  ]},
+];
 const num = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:0});
 const eurK = (n)=>{ n=isFinite(n)?n:0; const a=Math.abs(n);
   if(a>=1e6) return (n/1e6).toLocaleString("fr-FR",{maximumFractionDigits:2})+" M€";
@@ -498,7 +536,7 @@ export default function App(){
   const [moisDetecte,setMoisDetecte]=useState(false);
   const [tauxIS,setTauxIS]=useState(25);
   // Magasin d'exercices : { exercices:{ "2025":{archived:false,months:[...]}, ... } }
-  const [store,setStore]=useState({exercices:{},hotel:{},objectifs:{...OBJ_DEFAUT}});
+  const [store,setStore]=useState({exercices:{},hotel:{},budgets:{}});
   const [exYear,setExYear]=useState(String(now.getFullYear()));
   const [memOK,setMemOK]=useState(true);
   const MEMKEY="pilotage_store_v1";
@@ -506,7 +544,7 @@ export default function App(){
   useEffect(()=>{
     try{
       const raw=window.localStorage.getItem(MEMKEY);
-      if(raw){const d=JSON.parse(raw);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},objectifs:{...OBJ_DEFAUT,...(d.objectifs||{})}});
+      if(raw){const d=JSON.parse(raw);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},budgets:d.budgets||{}});
         const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);
         if(d.hotel){const hys=Object.keys(d.hotel).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}}
       // test d'écriture
@@ -646,64 +684,27 @@ export default function App(){
     return A;
   },[P,CA,store,annee,mois]);
 
-  /* ---- Objectifs vs réel ---- */
-  const OBJDEF=[
-    {k:"CA",lab:"Chiffre d'affaires",mode:"eur",sens:"min",hint:"objectif de CA HT par mois"},
-    {k:"matieres",lab:"Coût matières",mode:"pct",sens:"max",hint:"en % du CA · repère ≤ 30 %"},
-    {k:"MS",lab:"Masse salariale",mode:"pct",sens:"max",hint:"en % du CA · repère ≤ 35 %"},
-    {k:"prime",lab:"Coût principal",mode:"pct",sens:"max",hint:"matières + personnel · repère ≤ 65 %"},
-    {k:"loyer",lab:"Loyer",mode:"eur",sens:"max",hint:"objectif de loyer par mois"},
-    {k:"EBE",lab:"Marge d'EBE",mode:"pct",sens:"min",hint:"en % du CA · repère ≥ 12 %"},
-    {k:"seuil",lab:"Couverture du seuil de rentabilité",mode:"pct",sens:"min",hint:"CA ÷ seuil · 100 % = charges fixes couvertes"},
-  ];
-  const objectifs=store.objectifs||{};
-  const setObjectif=(k,v)=>setStore(s=>({...s,objectifs:{...(s.objectifs||{}),[k]:v}}));
-  const [objMonth,setObjMonth]=useState("");
-  const evalObj=(k,realVal,ca,months=1)=>{
-    const cfg=OBJDEF.find(o=>o.k===k); let cible=+objectifs[k]||0;
-    if(!cible)return null;
-    if(cfg.mode==="eur")cible=cible*months;
-    let actual;
-    if(k==="prime")      actual=ca>0?realVal/ca*100:0;      // realVal = matieres + MS
-    else if(k==="seuil") actual=realVal;                     // realVal = taux de couverture déjà calculé
-    else                 actual=cfg.mode==="pct"?(ca>0?realVal/ca*100:0):realVal;
-    const diff=actual-cible;
-    const status=cfg.sens==="max"?(actual<=cible?"good":actual<=cible*1.1?"warn":"bad")
-                                 :(actual>=cible?"good":actual>=cible*0.9?"warn":"bad");
-    return {cfg,cible,actual,diff,status};
-  };
-  // valeurs dérivées pour les objectifs calculés (CV et CF sont stockés par mois)
-  const objDerive=(d)=>{
-    if(!d)return d;
-    const ca=d.CA||0, cv=d.CV||0, cf=(d.CF||0)+(d.dotations||0);
-    const tx=ca>0?(ca-cv)/ca:0;
-    const seuilV=tx>0?cf/tx:0;
-    return {...d, prime:(d.matieres||0)+(d.MS||0), seuil:(seuilV>0&&ca>0)?ca/seuilV*100:0};
-  };
-  const objColor=(s)=>s==="good"?"var(--sage)":s==="warn"?"#C9A227":"#C77B6B";
-  const fmtObjV=(mode,v)=>mode==="pct"?pct(v):eur(v);
-  const fmtObjD=(mode,d)=>mode==="pct"?((d>=0?"+":"")+d.toLocaleString("fr-FR",{maximumFractionDigits:1})+" pts"):((d>=0?"+":"")+eur(d));
-  const aucunObjectif=!OBJDEF.some(o=>(+objectifs[o.k]||0)>0);
-  const objSuivi=(store.exercices?.[exYear]?.months)||[];
-  const objMoisSel=objMonth||(objSuivi.length?objSuivi[objSuivi.length-1].key:"");
-  const objMoisData=objDerive(objSuivi.find(m=>m.key===objMoisSel)?.vals||null);
-  const objAnnual=objSuivi.length?(()=>{const s=k=>objSuivi.reduce((a,m)=>a+(m.vals?.[k]||0),0);
-    return objDerive({n:objSuivi.length,CA:s("CA"),matieres:s("matieres"),MS:s("MS"),loyer:s("loyer"),EBE:s("EBE"),CV:s("CV"),CF:s("CF"),dotations:s("dotations")});})():null;
-  const objTable=(data,months)=>{
-    if(!data)return null;
-    const rows=OBJDEF.map(o=>{const r=evalObj(o.k,data[o.k]||0,data.CA||0,months);return r?{o,r}:null;}).filter(Boolean);
-    if(!rows.length)return <div className="hint"><Info size={16}/><span>Aucun objectif défini pour l'instant. Renseignez au moins une cible ci-dessus.</span></div>;
-    return (<table className="tbl">
-      <thead><tr><th style={{width:22}}></th><th>Poste</th><th style={{textAlign:"right"}}>Cible</th><th style={{textAlign:"right"}}>Réel</th><th style={{textAlign:"right"}}>Écart</th></tr></thead>
-      <tbody>{rows.map(({o,r})=>(<tr key={o.k}>
-        <td><span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",background:objColor(r.status)}}/></td>
-        <td style={{fontWeight:600}}>{o.lab}</td>
-        <td style={{textAlign:"right"}} className="num">{fmtObjV(o.mode,r.cible)}</td>
-        <td style={{textAlign:"right",fontWeight:600}} className="num">{fmtObjV(o.mode,r.actual)}</td>
-        <td style={{textAlign:"right",color:objColor(r.status),fontWeight:600}} className="num">{fmtObjD(o.mode,r.diff)}</td>
-      </tr>))}</tbody>
-    </table>);
-  };
+  /* ---- Budget annuel de charges vs réel ---- */
+  const budgets=store.budgets||{};
+  const budAnnee=exYear;
+  const budget=budgets[budAnnee]||{};
+  const setBudget=(k,v)=>setStore(s=>{
+    const b={...(s.budgets||{})}; b[budAnnee]={...(b[budAnnee]||{}),[k]:v};
+    return {...s,budgets:b};
+  });
+  const budSuivi=(store.exercices?.[budAnnee]?.months)||[];
+  const budReel=(k)=>budSuivi.reduce((a,m)=>a+(m.vals?.[k]||0),0);
+  const budTotal=BUDGET_GROUPES.reduce((a,g)=>a+g.postes.reduce((x,p)=>x+(+budget[p.k]||0),0),0);
+  const budReelTotal=BUDGET_GROUPES.reduce((a,g)=>a+g.postes.reduce((x,p)=>x+budReel(p.k),0),0);
+  const budEtat=(bud,reel)=>{ if(!bud)return "none"; const t=reel/bud*100;
+    return t>100?"bad":t>=90?"warn":"good"; };
+  const budCol=(s)=>s==="bad"?"#C77B6B":s==="warn"?"#C9A227":s==="good"?"var(--sage)":"#9a9a9a";
+  const budPart=(bud,reel)=>bud>0?reel/bud*100:0;
+  const budDepassements=BUDGET_GROUPES.flatMap(g=>g.postes).map(p=>{
+    const b=+budget[p.k]||0; if(!b)return null; const r=budReel(p.k);
+    return r>b?{lab:p.lab,bud:b,reel:r,ecart:r-b}:null;
+  }).filter(Boolean).sort((a,b)=>b.ecart-a.ecart);
+  const aucunBudget=budTotal<=0;
   const RES_FIN=P.prod_fin-P.charges_fin;
   const RES_EXC=P.prod_except-P.charges_except;
   const RAI=RES_EXPL+RES_FIN+RES_EXC;
@@ -787,7 +788,7 @@ export default function App(){
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
     a.download=`pilotage_sauvegarde.json`;a.click();
   };
-  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},objectifs:{...OBJ_DEFAUT,...(d.objectifs||{})}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);const hys=Object.keys(d.hotel||{}).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
+  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},budgets:d.budgets||{}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);const hys=Object.keys(d.hotel||{}).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
   const exportAnnual=()=>{
     const cols=suivi.map(m=>m.label);
     const ncols=cols.length+2;
@@ -1146,7 +1147,7 @@ export default function App(){
           ["annuel",<Table2 size={16}/>,"Tableau annuel"],
           ["cmp",<ArrowLeftRight size={16}/>,"Comparatif"],
           ["sante",<Activity size={16}/>,"Santé"],
-          ["objectifs",<Target size={16}/>,"Objectifs"],
+          ["budget",<Target size={16}/>,"Budget"],
           ["hotel",<BedDouble size={16}/>,"Remplissage hôtel"]].map(([k,ic,l])=>(
           <button key={k} className={"tab"+(tab===k?" on":"")} onClick={()=>setTab(k)}>{ic} {l}</button>))}
       </div>
@@ -1164,16 +1165,16 @@ export default function App(){
             </tr>))}</tbody>
           </table>
         </div>}
-        {(bal||CA>0)&&!aucunObjectif&&<div className="card">
-          <h3>Objectifs du mois</h3>
+        {(bal||CA>0)&&!aucunBudget&&budDepassements.length>0&&<div className="card">
+          <h3>Budget {budAnnee} — postes déjà dépassés</h3>
           <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:4}}>
-            {OBJDEF.map(o=>{const live=objDerive({CA,matieres:P.matieres,MS,loyer:P.loyer,EBE,CV,CF,dotations:P.dotations});const r=evalObj(o.k,live[o.k],CA,1);if(!r)return null;
-              return(<div key={o.k} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:10,background:"#F3EFE8",border:"1px solid #ECE6DC"}}>
-                <span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",background:objColor(r.status),flexShrink:0}}/>
-                <span style={{fontSize:13}}><b>{o.lab}</b> {fmtObjV(o.mode,r.actual)} <span style={{color:"var(--taupe)"}}>· cible {fmtObjV(o.mode,r.cible)}</span></span>
-              </div>);})}
+            {budDepassements.slice(0,6).map(d=>(
+              <div key={d.lab} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderRadius:10,background:"#F3EFE8",border:"1px solid #ECE6DC"}}>
+                <span style={{display:"inline-block",width:10,height:10,borderRadius:"50%",background:"#C77B6B",flexShrink:0}}/>
+                <span style={{fontSize:13}}><b>{d.lab}</b> {eur(d.reel)} <span style={{color:"var(--taupe)"}}>· budget {eur(d.bud)} · +{eur(d.ecart)}</span></span>
+              </div>))}
           </div>
-          <p className="mini" style={{marginTop:10}}>Détail mois par mois et sur la saison dans l'onglet « Objectifs ».</p>
+          <p className="mini" style={{marginTop:10}}>Cumul de la saison {budAnnee} sur {budSuivi.length} mois enregistré{budSuivi.length>1?"s":""}. Détail complet dans l'onglet « Budget ».</p>
         </div>}
         <div className="card">
           <h3>Import de la balance</h3>
@@ -1504,37 +1505,89 @@ export default function App(){
       </>}
 
       {/* ========== OBJECTIFS ========== */}
-      {tab==="objectifs"&&<>
-        <div className="card"><h3>Mes objectifs</h3>
-          <p className="sub">Fixez vos cibles une fois — elles servent à comparer le réel de chaque mois et de la saison. En pourcentage du CA pour les ratios de gestion (matières, personnel, marge), en euros pour le chiffre d'affaires et le loyer. Laissez à 0 un objectif que vous ne souhaitez pas suivre.</p>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginTop:10}}>
-            {OBJDEF.map(o=>(<div key={o.k} className="ifield">
-              <label>{o.lab} <span style={{textTransform:"none",letterSpacing:0,color:"var(--taupe)"}}>· en {o.mode==="pct"?"%":"€"}</span></label>
-              <input type="number" value={objectifs[o.k]||0} onChange={e=>setObjectif(o.k,+e.target.value)}/>
-              <span className="mini">{o.hint}</span>
-            </div>))}
+      {tab==="budget"&&<>
+        <div className="card"><div className="toolbar" style={{marginBottom:0}}>
+          <div className="ifield" style={{minWidth:130}}><label>Exercice budgété</label>
+            <select value={exYear} onChange={e=>setExYear(e.target.value)}>
+              {(Object.keys(store.exercices||{}).length?Object.keys(store.exercices).sort():[exYear]).map(y=><option key={y} value={y}>{y}</option>)}
+            </select></div>
+          <div style={{flex:1}}/>
+          <div style={{textAlign:"right"}}>
+            <div className="mini">Budget total des charges</div>
+            <div className="num" style={{fontSize:20,fontWeight:700}}>{eur(budTotal)}</div>
           </div>
-          {!aucunObjectif&&<div className="hint" style={{marginTop:14}}><Info size={16}/>
-            <span>Voyant <b style={{color:"var(--sage)"}}>vert</b> = objectif atteint · <b style={{color:"#C9A227"}}>orange</b> = à la limite (à moins de 10 %) · <b style={{color:"#C77B6B"}}>rouge</b> = dépassé. Pour les ratios, l'écart est en points de % ; pour le CA et le loyer, en euros.</span></div>}
+        </div>
+        <p className="mini" style={{marginTop:12}}>Fixez le budget <b>annuel</b> de chaque poste de charge pour la saison {exYear}, puis suivez sa consommation au fil des mois que vous ajoutez au tableau annuel. Laissez à 0 un poste que vous ne souhaitez pas budgéter.</p>
         </div>
 
-        <div className="card"><h3>Objectifs vs réel — le mois</h3>
-          {objSuivi.length===0
-            ? <div className="hint"><Info size={16}/><span>Ajoutez d'abord des mois au tableau annuel (onglet « Compte de résultat » → « Ajouter au tableau ») pour suivre vos objectifs mois par mois.</span></div>
-            : <><div className="toolbar" style={{marginBottom:12}}>
-                <div className="ifield" style={{minWidth:170}}><label>Mois</label>
-                  <select value={objMoisSel} onChange={e=>setObjMonth(e.target.value)}>
-                    {objSuivi.map(m=><option key={m.key} value={m.key}>{m.label}</option>)}
-                  </select></div>
+        <div className="card"><h3>Mon budget {exYear}</h3>
+          {BUDGET_GROUPES.map(g=>{
+            const sousTotal=g.postes.reduce((a,p)=>a+(+budget[p.k]||0),0);
+            return (<div key={g.g} style={{marginBottom:18}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",borderBottom:"1px solid #ECE6DC",paddingBottom:6,marginBottom:10}}>
+                <b style={{fontSize:13,letterSpacing:.3,textTransform:"uppercase",color:"var(--taupe)"}}>{g.g}</b>
+                <span className="num" style={{fontWeight:700}}>{eur(sousTotal)}</span>
               </div>
-              {objTable(objMoisData,1)}</>}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:12}}>
+                {g.postes.map(p=>(<div key={p.k} className="ifield">
+                  <label>{p.lab} <span style={{textTransform:"none",letterSpacing:0,color:"var(--taupe)"}}>· {p.cpt}</span></label>
+                  <input type="number" value={budget[p.k]||0} onChange={e=>setBudget(p.k,+e.target.value)}/>
+                </div>))}
+              </div>
+            </div>);
+          })}
         </div>
 
-        {objAnnual&&<div className="card"><h3>Objectifs vs réel — la saison {exYear} <span style={{fontWeight:400,color:"var(--taupe)"}}>· {objAnnual.n} mois cumulés</span></h3>
-          {objTable(objAnnual,objAnnual.n)}
-          <p className="mini" style={{marginTop:10}}>Sur la saison, les cibles en euros (CA, loyer) sont multipliées par le nombre de mois enregistrés ; les ratios sont calculés sur les totaux cumulés.</p>
-        </div>}
+        <div className="card"><h3>Budget vs réel — saison {exYear}</h3>
+          {budSuivi.length===0
+            ? <div className="hint"><Info size={16}/><span>Aucun mois enregistré pour {exYear}. Ajoutez des mois depuis « Compte de résultat » → « Ajouter au tableau » pour suivre la consommation du budget.</span></div>
+            : aucunBudget
+            ? <div className="hint"><Info size={16}/><span>Renseignez au moins un poste de budget ci-dessus pour voir la comparaison.</span></div>
+            : <>
+              <p className="sub" style={{marginTop:0}}>Cumul sur <b>{budSuivi.length} mois enregistré{budSuivi.length>1?"s":""}</b> ({budSuivi.map(m=>m.label).join(", ")}). Le budget étant annuel, une consommation partielle en cours de saison est normale — c'est le dépassement qui doit alerter.</p>
+              <div className="hscroll"><table className="tbl">
+                <thead><tr><th style={{width:22}}></th><th>Poste</th><th style={{textAlign:"right"}}>Budget annuel</th><th style={{textAlign:"right"}}>Réel cumulé</th><th style={{textAlign:"right"}}>Reste</th><th style={{textAlign:"right"}}>Consommé</th></tr></thead>
+                <tbody>
+                {BUDGET_GROUPES.map(g=>{
+                  const lignes=g.postes.filter(p=>(+budget[p.k]||0)>0||budReel(p.k)!==0);
+                  if(!lignes.length)return null;
+                  const bT=g.postes.reduce((a,p)=>a+(+budget[p.k]||0),0);
+                  const rT=g.postes.reduce((a,p)=>a+budReel(p.k),0);
+                  return (<React.Fragment key={g.g}>
+                    <tr><td colSpan={6} style={{background:"#F3EFE8",fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:.3,color:"var(--taupe)"}}>{g.g}</td></tr>
+                    {lignes.map(p=>{
+                      const b=+budget[p.k]||0, r=budReel(p.k), st=budEtat(b,r);
+                      return (<tr key={p.k}>
+                        <td><span style={{display:"inline-block",width:9,height:9,borderRadius:"50%",background:budCol(st)}}/></td>
+                        <td>{p.lab}</td>
+                        <td style={{textAlign:"right"}} className="num">{b?eur(b):"—"}</td>
+                        <td style={{textAlign:"right",fontWeight:600}} className="num">{eur(r)}</td>
+                        <td style={{textAlign:"right",color:b&&(b-r)<0?"#C77B6B":"inherit"}} className="num">{b?eur(b-r):"—"}</td>
+                        <td style={{textAlign:"right",color:budCol(st),fontWeight:600}} className="num">{b?pct(budPart(b,r)):"—"}</td>
+                      </tr>);
+                    })}
+                    <tr><td></td><td style={{fontWeight:700}}>Sous-total {g.g}</td>
+                      <td style={{textAlign:"right",fontWeight:700}} className="num">{bT?eur(bT):"—"}</td>
+                      <td style={{textAlign:"right",fontWeight:700}} className="num">{eur(rT)}</td>
+                      <td style={{textAlign:"right",fontWeight:700}} className="num">{bT?eur(bT-rT):"—"}</td>
+                      <td style={{textAlign:"right",fontWeight:700,color:budCol(budEtat(bT,rT))}} className="num">{bT?pct(budPart(bT,rT)):"—"}</td></tr>
+                  </React.Fragment>);
+                })}
+                <tr style={{borderTop:"2px solid var(--taupe)"}}>
+                  <td></td><td style={{fontWeight:800}}>TOTAL CHARGES</td>
+                  <td style={{textAlign:"right",fontWeight:800}} className="num">{eur(budTotal)}</td>
+                  <td style={{textAlign:"right",fontWeight:800}} className="num">{eur(budReelTotal)}</td>
+                  <td style={{textAlign:"right",fontWeight:800,color:(budTotal-budReelTotal)<0?"#C77B6B":"inherit"}} className="num">{eur(budTotal-budReelTotal)}</td>
+                  <td style={{textAlign:"right",fontWeight:800,color:budCol(budEtat(budTotal,budReelTotal))}} className="num">{pct(budPart(budTotal,budReelTotal))}</td>
+                </tr>
+                </tbody>
+              </table></div>
+              <div className="hint" style={{marginTop:12}}><Info size={16}/>
+                <span>Voyant <b style={{color:"var(--sage)"}}>vert</b> = sous le budget · <b style={{color:"#C9A227"}}>orange</b> = proche de la limite (90 % et plus) · <b style={{color:"#C77B6B"}}>rouge</b> = budget dépassé. La colonne « Reste » indique ce qu'il vous reste à dépenser sur l'année ; elle passe en rouge si elle est négative.</span></div>
+            </>}
+        </div>
       </>}
+
 
       {/* ========== HÔTEL ========== */}
       {tab==="hotel"&&<>
@@ -1604,15 +1657,13 @@ export default function App(){
           const trevpar=CA/hotel.dispo, goppar=EBE/hotel.dispo;
           return (<div className="card"><h3>Performance globale par chambre (avec la restauration)</h3>
             <div className="kpi-grid" style={{marginBottom:12}}>
-              <div className="kpi"><div className="lab">RevPAR — revenu chambres</div>
-                <div className="val num">{eur2(hotel.revpar)}</div><div className="mini">hébergement seul</div></div>
               <div className="kpi"><div className="lab">TRevPAR — revenu total</div>
                 <div className="val num" style={{color:"var(--sage)"}}>{eur2(trevpar)}</div><div className="mini">hébergement + restauration + tout le reste</div></div>
               <div className="kpi"><div className="lab">GOPPAR — bénéfice</div>
                 <div className="val num" style={{color:goppar>=0?"var(--sage)":"#C77B6B"}}>{eur2(goppar)}</div><div className="mini">résultat (EBE) par chambre disponible</div></div>
             </div>
             <div className="hint"><Info size={16}/>
-              <span>Ces trois indicateurs ramènent tout au <b>nombre de chambres disponibles</b> ({num(hotel.dispo)} chambres-nuits ce mois), pour comparer des mois entre eux quelle que soit la période. Le <b>RevPAR</b> ne compte que le revenu des chambres. Le <b>TRevPAR</b> (« revenu total par chambre disponible ») rapporte <i>tout</i> le chiffre d'affaires de l'établissement — hébergement, restaurant, bar, événements — à chaque chambre disponible : {eur2(trevpar)}, un niveau logiquement bien supérieur au RevPAR dans une maison où la restauration pèse lourd. Le <b>GOPPAR</b> (« bénéfice par chambre disponible ») va au bout : il rapporte le <i>résultat</i> (l'EBE) à chaque chambre — ce qui reste réellement une fois les charges payées. (RevPAR issu de l'export hôtel ; TRevPAR et GOPPAR de la balance — mêmes chambres disponibles.)</span></div>
+              <span>Ces deux indicateurs ramènent tout au <b>nombre de chambres disponibles</b> ({num(hotel.dispo)} chambres-nuits ce mois), pour comparer des mois entre eux quelle que soit la période. Là où le RevPAR (ci-dessus) ne compte que le revenu des chambres, le <b>TRevPAR</b> (« revenu total par chambre disponible ») rapporte <i>tout</i> le chiffre d'affaires de l'établissement — hébergement, restaurant, bar, événements — à chaque chambre disponible : {eur2(trevpar)}, un niveau logiquement bien supérieur au RevPAR dans une maison où la restauration pèse lourd. Le <b>GOPPAR</b> (« bénéfice par chambre disponible ») va au bout : il rapporte le <i>résultat</i> (l'EBE) à chaque chambre — ce qui reste réellement une fois les charges payées. (TRevPAR et GOPPAR sont calculés depuis la balance, avec les mêmes chambres disponibles que le RevPAR.)</span></div>
           </div>);
         })()}
 
