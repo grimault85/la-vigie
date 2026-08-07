@@ -1561,7 +1561,7 @@ export default function App(){
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
                     {p.detail.map(d=>(<div key={d.k} className="ifield">
                       <label>{d.lab}</label>
-                      <input type="number" disabled={budLocked} value={budget[d.k]||0} onChange={e=>setBudget(d.k,+e.target.value)}/>
+                      <input type="number" inputMode="numeric" placeholder="0" disabled={budLocked} value={budget[d.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(d.k,e.target.value===""?0:+e.target.value)}/>
                     </div>))}
                   </div>
                 </div>
@@ -1569,7 +1569,7 @@ export default function App(){
                 <div key={p.k} style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:12,marginBottom:12}}>
                   <div className="ifield">
                     <label>{p.lab} <span style={{textTransform:"none",letterSpacing:0,color:"var(--taupe)"}}>· {p.cpt}</span></label>
-                    <input type="number" disabled={budLocked} value={budget[p.k]||0} onChange={e=>setBudget(p.k,+e.target.value)}/>
+                    <input type="number" inputMode="numeric" placeholder="0" disabled={budLocked} value={budget[p.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(p.k,e.target.value===""?0:+e.target.value)}/>
                   </div>
                 </div>
               ))}
