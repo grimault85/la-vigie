@@ -67,6 +67,8 @@ const css = `
 .pnl.compact td:first-child{width:132px}
 .pnl.compact td:last-child{width:64px}
 .pnl.compact td.lbl{font-size:12.5px;max-width:150px;white-space:normal;line-height:1.2}
+.nospin::-webkit-outer-spin-button,.nospin::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.nospin{-moz-appearance:textfield;appearance:textfield}
 .hscroll{overflow-x:auto;scrollbar-width:thin;scrollbar-color:var(--taupe) transparent}
 .hscroll::-webkit-scrollbar{height:8px}
 .hscroll::-webkit-scrollbar-track{background:transparent}
@@ -1561,7 +1563,7 @@ export default function App(){
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
                     {p.detail.map(d=>(<div key={d.k} className="ifield">
                       <label>{d.lab}</label>
-                      <input type="number" inputMode="numeric" placeholder="0" disabled={budLocked} value={budget[d.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(d.k,e.target.value===""?0:+e.target.value)}/>
+                      <input type="number" className="nospin" inputMode="numeric" placeholder="0" onWheel={e=>e.target.blur()} disabled={budLocked} value={budget[d.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(d.k,e.target.value===""?0:+e.target.value)}/>
                     </div>))}
                   </div>
                 </div>
@@ -1569,7 +1571,7 @@ export default function App(){
                 <div key={p.k} style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:12,marginBottom:12}}>
                   <div className="ifield">
                     <label>{p.lab} <span style={{textTransform:"none",letterSpacing:0,color:"var(--taupe)"}}>· {p.cpt}</span></label>
-                    <input type="number" inputMode="numeric" placeholder="0" disabled={budLocked} value={budget[p.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(p.k,e.target.value===""?0:+e.target.value)}/>
+                    <input type="number" className="nospin" inputMode="numeric" placeholder="0" onWheel={e=>e.target.blur()} disabled={budLocked} value={budget[p.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(p.k,e.target.value===""?0:+e.target.value)}/>
                   </div>
                 </div>
               ))}
