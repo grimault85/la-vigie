@@ -408,6 +408,15 @@ function parsePMS(d){
 
 /* Regroupement PCG : compte -> poste (ordre = du plus spécifique au plus large) */
 const PRODUITS = new Set(["ca","ca_hotel","ca_petitdej","ca_evt","autres_produits","prod_fin","prod_except"]);
+// Ventilation des achats de matières par activité, d'après les sous-comptes paramétrés
+function ventActivite(cptRaw,map){
+  const c=String(cptRaw).replace(/\D/g,""); if(!c||!map)return null;
+  for(const k of ["mat_resto","mat_bar","mat_pdej"]){
+    const prefixes=String(map[k]||"").split(/[^0-9]+/).filter(Boolean);
+    if(prefixes.some(p=>c.startsWith(p)))return k;
+  }
+  return null;
+}
 function classify(cptRaw){
   const c=String(cptRaw).replace(/\D/g,"");
   if(!c)return null;
@@ -540,7 +549,7 @@ export default function App(){
   const [moisDetecte,setMoisDetecte]=useState(false);
   const [tauxIS,setTauxIS]=useState(25);
   // Magasin d'exercices : { exercices:{ "2025":{archived:false,months:[...]}, ... } }
-  const [store,setStore]=useState({exercices:{},hotel:{},budgets:{}});
+  const [store,setStore]=useState({exercices:{},hotel:{},budgets:{},mapAchats:{mat_resto:"",mat_bar:"",mat_pdej:""}});
   const [exYear,setExYear]=useState(String(now.getFullYear()));
   const [memOK,setMemOK]=useState(true);
   const MEMKEY="pilotage_store_v1";
@@ -548,7 +557,7 @@ export default function App(){
   useEffect(()=>{
     try{
       const raw=window.localStorage.getItem(MEMKEY);
-      if(raw){const d=JSON.parse(raw);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},budgets:d.budgets||{}});
+      if(raw){const d=JSON.parse(raw);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},budgets:d.budgets||{},mapAchats:d.mapAchats||{mat_resto:"",mat_bar:"",mat_pdej:""}});
         const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);
         if(d.hotel){const hys=Object.keys(d.hotel).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}}
       // test d'écriture
@@ -581,12 +590,15 @@ export default function App(){
   };
 
   /* ---- Regroupement automatique ---- */
+  const mapAchats=store.mapAchats||{mat_resto:"",mat_bar:"",mat_pdej:""};
+  const setMapAchats=(k,v)=>setStore(st=>({...st,mapAchats:{...(st.mapAchats||{}),[k]:v}}));
   const auto=useMemo(()=>{
     const b={matieres:0,conso_var:0,comm_var:0,cb_var:0,pub:0,
       loyer:0,autres_loc:0,entretien:0,assurances:0,energie:0,divers_fixe:0,honoraires:0,
       telecom:0,bq_fixe:0,deplacements:0,impots_fixe:0,autres_gc:0,
       salaires:0,urssaf:0,mutuelle:0,retraite:0,autres_orgs:0,taxes_sal:0,
       dotations:0,autres_charges:0,charges_fin:0,charges_except:0,ca:0,ca_hotel:0,ca_petitdej:0,ca_evt:0,autres_produits:0,prod_fin:0,prod_except:0};
+    const vent={mat_resto:0,mat_bar:0,mat_pdej:0};
     let ignored=0,classified=0;
     if(bal&&bal.source==="pdf"){
       (bal.parsed||[]).forEach(r=>{
@@ -594,6 +606,7 @@ export default function App(){
         if(!key){ignored++;return;}
         const v=PRODUITS.has(key)?(r.credit-r.debit):(r.debit-r.credit);
         b[key]+=v;classified++;
+        if(key==="matieres"){const a=ventActivite(r.compte,mapAchats);if(a)vent[a]+=v;}
       });
     } else if(bal&&cCpt>-1){
       bal.rows.forEach(r=>{
@@ -603,17 +616,21 @@ export default function App(){
         const cred=cCred>-1?toNum(r[cCred]):0;
         const v=PRODUITS.has(key)?(cred-deb):(deb-cred);
         b[key]+=v;classified++;
+        if(key==="matieres"){const a=ventActivite(r[cCpt],mapAchats);if(a)vent[a]+=v;}
       });
     }
     Object.keys(b).forEach(k=>b[k]=Math.round(b[k]*100)/100);
-    return {b,ignored,classified};
-  },[bal,cCpt,cDeb,cCred]);
+    Object.keys(vent).forEach(k=>vent[k]=Math.round(vent[k]*100)/100);
+    return {b,ignored,classified,vent};
+  },[bal,cCpt,cDeb,cCred,mapAchats]);
 
   /* ---- Overrides manuels ---- */
   const [ov,setOv]=useState({});
   const g=(k,a)=>(ov[k]!==undefined&&ov[k]!==""?toNum(ov[k]):a);
   const setV=(k,v)=>setOv(o=>({...o,[k]:v}));
   const B=auto.b;
+  const VENT=auto.vent||{mat_resto:0,mat_bar:0,mat_pdej:0};
+  const ventActive=(VENT.mat_resto+VENT.mat_bar+VENT.mat_pdej)!==0;
 
   // CA ventilé : bar/resto/événement depuis Jalia si dispo, sinon balance ; hôtel/petit déj depuis la balance
   const caissePeriode=jalia&&!jalia.error?jalia.periode:null;
@@ -726,6 +743,21 @@ export default function App(){
     return r>b?{lab:p.lab,bud:b,reel:r,ecart:r-b}:null;
   }).filter(Boolean).sort((a,b)=>b.ecart-a.ecart);
   const aucunBudget=budTotal<=0;
+  const budExArchive=!!(store.exercices?.[budAnnee]?.archived);
+  const budAnneesDispo=(()=>{
+    const cur=String(new Date().getFullYear());
+    const set=new Set([...Object.keys(store.exercices||{}),...Object.keys(store.budgets||{}),cur,exYear]);
+    return [...set].filter(Boolean).sort();
+  })();
+  const reporterBudget=()=>{
+    const cible=window.prompt(`Reporter le budget ${budAnnee} sur quelle année ?`,String(+budAnnee+1));
+    if(!cible||!/^\d{4}$/.test(cible.trim()))return;
+    const y=cible.trim();
+    if((store.budgets?.[y]?.postes)&&Object.keys(store.budgets[y].postes).length
+       &&!window.confirm(`Un budget existe déjà pour ${y}. Le remplacer ?`))return;
+    setStore(s=>{const b={...(s.budgets||{})};b[y]={postes:{...budget},locked:false,lockedAt:null};return {...s,budgets:b};});
+    setExYear(y);
+  };
   const RES_FIN=P.prod_fin-P.charges_fin;
   const RES_EXC=P.prod_except-P.charges_except;
   const RAI=RES_EXPL+RES_FIN+RES_EXC;
@@ -774,6 +806,7 @@ export default function App(){
     }
     const key=`${annee}-${String(mois+1).padStart(2,"0")}`;
     const vals={}; LIGNES.forEach(([k,,v])=>vals[k]=Math.round(v*100)/100);
+    if(ventActive){vals.mat_resto_reel=VENT.mat_resto;vals.mat_bar_reel=VENT.mat_bar;vals.mat_pdej_reel=VENT.mat_pdej;}
     const entry={key,mois,annee,label:`${MOISC[mois]} ${String(annee).slice(2)}`,vals};
     setStore(s=>{
       const ex={...s.exercices};
@@ -809,7 +842,7 @@ export default function App(){
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
     a.download=`pilotage_sauvegarde.json`;a.click();
   };
-  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},budgets:d.budgets||{}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);const hys=Object.keys(d.hotel||{}).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
+  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},budgets:d.budgets||{},mapAchats:d.mapAchats||{mat_resto:"",mat_bar:"",mat_pdej:""}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);const hys=Object.keys(d.hotel||{}).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
   const exportAnnual=()=>{
     const cols=suivi.map(m=>m.label);
     const ncols=cols.length+2;
@@ -1530,18 +1563,28 @@ export default function App(){
         <div className="card"><div className="toolbar" style={{marginBottom:0}}>
           <div className="ifield" style={{minWidth:130}}><label>Exercice budgété</label>
             <select value={exYear} onChange={e=>setExYear(e.target.value)}>
-              {(Object.keys(store.exercices||{}).length?Object.keys(store.exercices).sort():[exYear]).map(y=><option key={y} value={y}>{y}</option>)}
+              {budAnneesDispo.map(y=><option key={y} value={y}>{y}</option>)}
             </select></div>
+          <button className="btn ghost" onClick={()=>{
+            const y=window.prompt("Budgéter quelle année ?",String(+budAnneesDispo[budAnneesDispo.length-1]+1));
+            if(y&&/^\d{4}$/.test(y.trim()))setExYear(y.trim());
+          }}><Plus size={14}/> Autre année</button>
+          {budExArchive&&<span className="mini" style={{marginLeft:8,color:"var(--taupe)"}}><Lock size={12}/> exercice clôturé</span>}
           <div style={{flex:1}}/>
           <div style={{textAlign:"right",marginRight:14}}>
             <div className="mini">Budget total des charges</div>
             <div className="num" style={{fontSize:20,fontWeight:700}}>{eur(budTotal)}</div>
           </div>
-          {budLocked
+          {!aucunBudget&&<button className="btn ghost" onClick={reporterBudget} title="Créer le budget de l'année suivante à partir de celui-ci"><RotateCcw size={14}/> Reporter</button>}
+          {budExArchive
+            ? null
+            : budLocked
             ? <button className="btn ghost" onClick={()=>{if(window.confirm(`Débloquer le budget ${budAnnee} pour le modifier ?`))setBudLock(false);}}><Lock size={14}/> Débloquer</button>
             : <button className="btn pri" disabled={aucunBudget} onClick={()=>{if(window.confirm(`Valider le budget ${budAnnee} ? Il sera verrouillé — vous pourrez toujours le débloquer ensuite.`))setBudLock(true);}}><CheckCircle2 size={14}/> Valider le budget</button>}
         </div>
-        {budLocked&&<div className="hint" style={{marginTop:12}}><Lock size={16}/>
+        {budExArchive&&<div className="hint" style={{marginTop:12}}><Lock size={16}/>
+          <span><b>Exercice {budAnnee} clôturé.</b> Le budget et sa comparaison sont figés : ils constituent le bilan définitif de la saison, consultable à tout moment. Utilisez « Reporter » pour repartir de ce budget sur l'année suivante.</span></div>}
+        {!budExArchive&&budLocked&&<div className="hint" style={{marginTop:12}}><Lock size={16}/>
           <span><b>Budget {budAnnee} validé{budLockedAt?` le ${budLockedAt}`:""}.</b> Les montants sont verrouillés : le suivi se fait sur cette base de référence. Cliquez « Débloquer » pour les modifier.</span></div>}
         <p className="mini" style={{marginTop:12}}>Fixez le budget <b>annuel</b> de chaque poste de charge pour la saison {exYear}, puis validez-le pour le figer. Le suivi compare ensuite le réel des mois enregistrés à ce budget. Laissez à 0 un poste que vous ne souhaitez pas budgéter.</p>
         </div>
@@ -1563,7 +1606,7 @@ export default function App(){
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
                     {p.detail.map(d=>(<div key={d.k} className="ifield">
                       <label>{d.lab}</label>
-                      <input type="number" className="nospin" inputMode="numeric" placeholder="0" onWheel={e=>e.target.blur()} disabled={budLocked} value={budget[d.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(d.k,e.target.value===""?0:+e.target.value)}/>
+                      <input type="number" className="nospin" inputMode="numeric" placeholder="0" onWheel={e=>e.target.blur()} disabled={budLocked||budExArchive} value={budget[d.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(d.k,e.target.value===""?0:+e.target.value)}/>
                     </div>))}
                   </div>
                 </div>
@@ -1571,15 +1614,30 @@ export default function App(){
                 <div key={p.k} style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:12,marginBottom:12}}>
                   <div className="ifield">
                     <label>{p.lab} <span style={{textTransform:"none",letterSpacing:0,color:"var(--taupe)"}}>· {p.cpt}</span></label>
-                    <input type="number" className="nospin" inputMode="numeric" placeholder="0" onWheel={e=>e.target.blur()} disabled={budLocked} value={budget[p.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(p.k,e.target.value===""?0:+e.target.value)}/>
+                    <input type="number" className="nospin" inputMode="numeric" placeholder="0" onWheel={e=>e.target.blur()} disabled={budLocked||budExArchive} value={budget[p.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(p.k,e.target.value===""?0:+e.target.value)}/>
                   </div>
                 </div>
               ))}
             </div>);
           })}
           <div className="hint"><Info size={16}/>
-            <span>Seules les charges que vous pouvez <b>piloter</b> ont un champ de saisie : matières, personnel, énergie, entretien, communication… Les charges <b>contractuelles ou mécaniques</b> (loyer, assurances, cotisations sociales, dotations, impôts) ne se budgètent pas — elles s'imposent à vous. Elles restent affichées dans le suivi, pour information, avec leur montant réel.<br/><br/>
-            Le budget matières peut être réparti entre <b>Restauration</b>, <b>Bar</b> et <b>Petit déjeuner</b> — le total sert de référence. En revanche, la balance comptable ne distingue pas ces trois activités sur les comptes d'achats : le <b>réel</b> ne peut être comparé qu'au <b>total matières</b>. Pour un suivi réel par activité, demandez à votre comptable de créer des sous-comptes d'achats distincts (par exemple 601100 restauration, 601200 bar, 601300 petits déjeuners).</span></div>
+            <span>Seules les charges que vous pouvez <b>piloter</b> ont un champ de saisie : matières, personnel, énergie, entretien, communication… Les charges <b>contractuelles ou mécaniques</b> (loyer, assurances, cotisations sociales, dotations, impôts) ne se budgètent pas — elles s'imposent à vous. Elles restent affichées dans le suivi, pour information, avec leur montant réel.</span></div>
+        </div>
+
+        <div className="card"><h3>Sous-comptes d'achats par activité</h3>
+          <p className="sub">Si votre comptabilité distingue les achats par activité (par exemple 601100 pour la restauration, 601200 pour le bar, 601300 pour les petits déjeuners), indiquez ici les numéros de comptes correspondants. La Vigie ventilera alors automatiquement le <b>réel</b> par activité à chaque import de balance, et le comparera au détail de votre budget.</p>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginTop:10}}>
+            {[["mat_resto","Restauration"],["mat_bar","Bar"],["mat_pdej","Petit déjeuner"]].map(([k,lab])=>(
+              <div key={k} className="ifield">
+                <label>{lab}</label>
+                <input type="text" placeholder="ex. 601100, 6021" value={mapAchats[k]||""} onChange={e=>setMapAchats(k,e.target.value)}/>
+              </div>))}
+          </div>
+          <div className="hint" style={{marginTop:12}}>
+            {ventActive
+              ? <><CheckCircle2 size={16}/><span><b>Ventilation active</b> sur la balance chargée : Restauration {eur(VENT.mat_resto)} · Bar {eur(VENT.mat_bar)} · Petit déjeuner {eur(VENT.mat_pdej)}. Ces montants sont enregistrés avec le mois et comparés à votre budget par activité.</span></>
+              : <><Info size={16}/><span>Aucun sous-compte reconnu pour l'instant : le réel des matières reste comparé au <b>total</b> du budget matières. Plusieurs numéros peuvent être saisis par activité, séparés par une virgule. Un numéro sert de préfixe : « 6011 » couvre 601100, 601110, etc.</span></>}
+          </div>
         </div>
 
         <div className="card"><h3>Budget vs réel — saison {exYear}</h3>
@@ -1610,13 +1668,21 @@ export default function App(){
                         <td style={{textAlign:"right",color:budCol(st),fontWeight:600}} className="num">{b?pct(budPart(b,r)):"—"}</td>
                       </tr>,
                       ...(p.detail&&p.detail.some(d=>(+budget[d.k]||0)>0)
-                        ? p.detail.filter(d=>(+budget[d.k]||0)>0).map(d=>(
-                          <tr key={p.k+"-"+d.k}>
-                            <td></td>
-                            <td style={{paddingLeft:22,color:"var(--taupe)",fontSize:12.5}}>· dont {d.lab}</td>
-                            <td style={{textAlign:"right",color:"var(--taupe)"}} className="num">{eur(+budget[d.k]||0)}</td>
-                            <td style={{textAlign:"right",color:"var(--taupe)",fontSize:12}} colSpan={3}>réel non ventilable par la balance</td>
-                          </tr>))
+                        ? p.detail.filter(d=>(+budget[d.k]||0)>0).map(d=>{
+                            const rd=budSuivi.reduce((a,m)=>a+(m.vals?.[d.k+"_reel"]||0),0);
+                            const bd=+budget[d.k]||0;
+                            const dispo=budSuivi.some(m=>m.vals?.[d.k+"_reel"]!==undefined);
+                            return (<tr key={p.k+"-"+d.k}>
+                              <td>{dispo?<span style={{display:"inline-block",width:9,height:9,borderRadius:"50%",background:budCol(budEtat(bd,rd))}}/>:null}</td>
+                              <td style={{paddingLeft:22,color:"var(--taupe)",fontSize:12.5}}>· dont {d.lab}</td>
+                              <td style={{textAlign:"right",color:"var(--taupe)"}} className="num">{eur(bd)}</td>
+                              {dispo
+                                ? <><td style={{textAlign:"right"}} className="num">{eur(rd)}</td>
+                                    <td style={{textAlign:"right",color:(bd-rd)<0?"#C77B6B":"inherit"}} className="num">{eur(bd-rd)}</td>
+                                    <td style={{textAlign:"right",color:budCol(budEtat(bd,rd))}} className="num">{pct(budPart(bd,rd))}</td></>
+                                : <td style={{textAlign:"right",color:"var(--taupe)",fontSize:12}} colSpan={3}>réel non ventilé — voir « Sous-comptes d'achats »</td>}
+                            </tr>);
+                          })
                         : [])]);
                     })}
                     <tr><td></td><td style={{fontWeight:700}}>Sous-total {g.g}</td>
