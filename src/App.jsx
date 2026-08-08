@@ -753,14 +753,20 @@ export default function App(){
     const set=new Set([...Object.keys(store.exercices||{}),...Object.keys(store.budgets||{}),cur,exYear]);
     return [...set].filter(Boolean).sort();
   })();
-  const reporterBudget=()=>{
-    const cible=window.prompt(`Reporter le budget ${budAnnee} sur quelle année ?`,String(+budAnnee+1));
-    if(!cible||!/^\d{4}$/.test(cible.trim()))return;
-    const y=cible.trim();
-    if((store.budgets?.[y]?.postes)&&Object.keys(store.budgets[y].postes).length
-       &&!window.confirm(`Un budget existe déjà pour ${y}. Le remplacer ?`))return;
-    setStore(s=>{const b={...(s.budgets||{})};b[y]={postes:{...budget},locked:false,lockedAt:null};return {...s,budgets:b};});
-    setExYear(y);
+  const [budCible,setBudCible]=useState("");
+  const [budMsg,setBudMsg]=useState("");
+  const ouvrirAnnee=()=>{
+    const y=String(budCible).trim();
+    if(!/^\d{4}$/.test(y)){setBudMsg("Indiquez une année sur 4 chiffres, par exemple 2027.");return;}
+    setExYear(y);setBudCible("");setBudMsg(`Année ${y} ouverte.`);
+  };
+  const copierBudgetVers=()=>{
+    const y=String(budCible).trim();
+    if(!/^\d{4}$/.test(y)){setBudMsg("Indiquez l'année de destination sur 4 chiffres, par exemple 2027.");return;}
+    if(y===budAnnee){setBudMsg("Choisissez une année différente de celle affichée.");return;}
+    const source={...budget};
+    setStore(s=>{const b={...(s.budgets||{})};b[y]={postes:source,locked:false,lockedAt:null};return {...s,budgets:b};});
+    setExYear(y);setBudCible("");setBudMsg(`Budget ${budAnnee} copié vers ${y} — ajustez-le puis validez-le.`);
   };
   const RES_FIN=P.prod_fin-P.charges_fin;
   const RES_EXC=P.prod_except-P.charges_except;
@@ -1569,23 +1575,26 @@ export default function App(){
             <select value={exYear} onChange={e=>setExYear(e.target.value)}>
               {budAnneesDispo.map(y=><option key={y} value={y}>{y}</option>)}
             </select></div>
-          <button className="btn ghost" onClick={()=>{
-            const y=window.prompt("Budgéter quelle année ?",String(+budAnneesDispo[budAnneesDispo.length-1]+1));
-            if(y&&/^\d{4}$/.test(y.trim()))setExYear(y.trim());
-          }}><Plus size={14}/> Autre année</button>
           {budExArchive&&<span className="mini" style={{marginLeft:8,color:"var(--taupe)"}}><Lock size={12}/> exercice clôturé</span>}
           <div style={{flex:1}}/>
           <div style={{textAlign:"right",marginRight:14}}>
             <div className="mini">Budget total des charges</div>
             <div className="num" style={{fontSize:20,fontWeight:700}}>{eur(budTotal)}</div>
           </div>
-          {!aucunBudget&&<button className="btn ghost" onClick={reporterBudget} title="Créer le budget d'une autre année en repartant de celui-ci (évite de tout ressaisir)"><RotateCcw size={14}/> Copier vers une autre année</button>}
-          {budExArchive
-            ? null
-            : budLocked
-            ? <button className="btn ghost" onClick={()=>{if(window.confirm(`Débloquer le budget ${budAnnee} pour le modifier ?`))setBudLock(false);}}><Lock size={14}/> Débloquer</button>
-            : <button className="btn pri" disabled={aucunBudget} onClick={()=>{if(window.confirm(`Valider le budget ${budAnnee} ? Il sera verrouillé — vous pourrez toujours le débloquer ensuite.`))setBudLock(true);}}><CheckCircle2 size={14}/> Valider le budget</button>}
+          
+          {budLocked
+            ? <button className="btn ghost" onClick={()=>{setBudLock(false);setBudMsg("Budget débloqué : les montants sont modifiables.");}}><Lock size={14}/> Débloquer</button>
+            : <button className="btn pri" disabled={aucunBudget} onClick={()=>{setBudLock(true);setBudMsg("Budget validé et verrouillé.");}}><CheckCircle2 size={14}/> Valider le budget</button>}
         </div>
+        <div className="toolbar" style={{marginTop:14,marginBottom:0,alignItems:"flex-end"}}>
+          <div className="ifield" style={{minWidth:150}}><label>Autre année</label>
+            <input type="text" className="nospin" inputMode="numeric" maxLength={4} placeholder="ex. 2027"
+              value={budCible} onChange={e=>{setBudCible(e.target.value.replace(/\D/g,""));setBudMsg("");}}/></div>
+          <button className="btn ghost" onClick={ouvrirAnnee}><Plus size={14}/> Ouvrir cette année</button>
+          {!aucunBudget&&<button className="btn ghost" onClick={copierBudgetVers} title="Recopier le budget affiché sur l'année indiquée, pour ne pas tout ressaisir"><RotateCcw size={14}/> Y copier ce budget</button>}
+        </div>
+        {budMsg&&<p className="mini" style={{marginTop:8,color:"var(--sage)"}}>{budMsg}</p>}
+
         {budExArchive&&<div className="hint" style={{marginTop:12}}><Lock size={16}/>
           <span><b>Exercice {budAnnee} clôturé.</b> Le budget et sa comparaison sont figés : ils constituent le bilan définitif de la saison, consultable à tout moment. Utilisez « Copier vers une autre année » pour repartir de ce budget sur la saison suivante.</span></div>}
         {!budExArchive&&budLocked&&<div className="hint" style={{marginTop:12}}><Lock size={16}/>
@@ -1610,7 +1619,7 @@ export default function App(){
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}>
                     {p.detail.map(d=>(<div key={d.k} className="ifield">
                       <label>{d.lab}</label>
-                      <input type="number" className="nospin" inputMode="numeric" placeholder="0" onWheel={e=>e.target.blur()} disabled={budLocked||budExArchive} value={budget[d.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(d.k,e.target.value===""?0:+e.target.value)}/>
+                      <input type="number" className="nospin" inputMode="numeric" placeholder="0" onWheel={e=>e.target.blur()} disabled={budLocked} value={budget[d.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(d.k,e.target.value===""?0:+e.target.value)}/>
                     </div>))}
                   </div>
                 </div>
@@ -1618,7 +1627,7 @@ export default function App(){
                 <div key={p.k} style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(230px,1fr))",gap:12,marginBottom:12}}>
                   <div className="ifield">
                     <label>{p.lab} <span style={{textTransform:"none",letterSpacing:0,color:"var(--taupe)"}}>· {p.cpt}</span></label>
-                    <input type="number" className="nospin" inputMode="numeric" placeholder="0" onWheel={e=>e.target.blur()} disabled={budLocked||budExArchive} value={budget[p.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(p.k,e.target.value===""?0:+e.target.value)}/>
+                    <input type="number" className="nospin" inputMode="numeric" placeholder="0" onWheel={e=>e.target.blur()} disabled={budLocked} value={budget[p.k]||""} onFocus={e=>e.target.select()} onChange={e=>setBudget(p.k,e.target.value===""?0:+e.target.value)}/>
                   </div>
                 </div>
               ))}
