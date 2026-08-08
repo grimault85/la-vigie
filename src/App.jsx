@@ -279,7 +279,9 @@ async function parsePdfBalance(buf) {
       if (!/^\d{6,8}$/.test(first)) continue;
       const monies = cells.filter((c) => MONEY_RE.test(c.str.trim()))
         .map((c) => ({ xc: c.xc, v: toNum(c.str) }));
-      raw.push({ cpt: first, monies });
+      const libelle = cells.slice(1).filter((c) => !MONEY_RE.test(c.str.trim()))
+        .map((c) => c.str.trim()).join(" ").trim();
+      raw.push({ cpt: first, libelle, monies });
     }
   }
   if (xDeb == null || xCred == null)
@@ -292,7 +294,7 @@ async function parsePdfBalance(buf) {
   };
   const parsed = raw.map((r) => {
     const [d, c] = splitDC(r.monies);
-    return { compte: r.cpt, debit: d, credit: c };
+    return { compte: r.cpt, libelle: r.libelle || "", debit: d, credit: c };
   });
   let control = null;
   if (ctrlMonies) { const [d, c] = splitDC(ctrlMonies); control = Math.round((c - d) * 100) / 100; }
@@ -408,13 +410,15 @@ function parsePMS(d){
 
 /* Regroupement PCG : compte -> poste (ordre = du plus spécifique au plus large) */
 const PRODUITS = new Set(["ca","ca_hotel","ca_petitdej","ca_evt","autres_produits","prod_fin","prod_except"]);
-// Ventilation des achats de matières par activité, d'après les sous-comptes paramétrés
-function ventActivite(cptRaw,map){
-  const c=String(cptRaw).replace(/\D/g,""); if(!c||!map)return null;
-  for(const k of ["mat_resto","mat_bar","mat_pdej"]){
-    const prefixes=String(map[k]||"").split(/[^0-9]+/).filter(Boolean);
-    if(prefixes.some(p=>c.startsWith(p)))return k;
-  }
+// Détection automatique de l'activité d'un compte d'achats, d'après son libellé.
+// Ne renvoie une activité que si le libellé est explicite — sinon null (le montant
+// reste dans le total matières, sans invention de répartition).
+function ventActivite(libelleRaw){
+  const t=String(libelleRaw||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
+  if(!t)return null;
+  if(/PETIT[S]? ?DEJ|PDJ|VIENNOISERIE|BREAKFAST/.test(t))return "mat_pdej";
+  if(/BOISSON|BIERE|VIN|ALCOOL|SPIRITUEU|CHAMPAGNE|SOFT|CAFE|BAR\b|LIQUIDE/.test(t))return "mat_bar";
+  if(/ALIMENTAIRE|NOURRITURE|CUISINE|RESTAURATION|SOLIDE|DENREE|VIANDE|POISSON|LEGUME|EPICERIE|CREMERIE/.test(t))return "mat_resto";
   return null;
 }
 function classify(cptRaw){
@@ -541,6 +545,7 @@ export default function App(){
   const [jalia,setJalia]=useState(null);
   const [parsingJ,setParsingJ]=useState(false);
   const [cCpt,setCCpt]=useState(-1);
+  const [cLib,setCLib]=useState(-1);
   const [cDeb,setCDeb]=useState(-1);
   const [cCred,setCCred]=useState(-1);
   const now=new Date();
@@ -549,7 +554,7 @@ export default function App(){
   const [moisDetecte,setMoisDetecte]=useState(false);
   const [tauxIS,setTauxIS]=useState(25);
   // Magasin d'exercices : { exercices:{ "2025":{archived:false,months:[...]}, ... } }
-  const [store,setStore]=useState({exercices:{},hotel:{},budgets:{},mapAchats:{mat_resto:"",mat_bar:"",mat_pdej:""}});
+  const [store,setStore]=useState({exercices:{},hotel:{},budgets:{}});
   const [exYear,setExYear]=useState(String(now.getFullYear()));
   const [memOK,setMemOK]=useState(true);
   const MEMKEY="pilotage_store_v1";
@@ -557,7 +562,7 @@ export default function App(){
   useEffect(()=>{
     try{
       const raw=window.localStorage.getItem(MEMKEY);
-      if(raw){const d=JSON.parse(raw);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},budgets:d.budgets||{},mapAchats:d.mapAchats||{mat_resto:"",mat_bar:"",mat_pdej:""}});
+      if(raw){const d=JSON.parse(raw);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},budgets:d.budgets||{}});
         const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);
         if(d.hotel){const hys=Object.keys(d.hotel).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}}
       // test d'écriture
@@ -578,6 +583,7 @@ export default function App(){
   const onBal=(d)=>{
     setBal(d);
     setCCpt(guessCol(d.headers,["compte","n°","num","cpt"]));
+    setCLib(guessCol(d.headers,["libell","intitul","designation","désignation","nom"]));
     setCDeb(guessCol(d.headers,["débit","debit"]));
     setCCred(guessCol(d.headers,["crédit","credit"]));
     if(d.periode){setMois(d.periode.mois);setAnnee(d.periode.annee);setMoisDetecte(true);}
@@ -590,8 +596,6 @@ export default function App(){
   };
 
   /* ---- Regroupement automatique ---- */
-  const mapAchats=store.mapAchats||{mat_resto:"",mat_bar:"",mat_pdej:""};
-  const setMapAchats=(k,v)=>setStore(st=>({...st,mapAchats:{...(st.mapAchats||{}),[k]:v}}));
   const auto=useMemo(()=>{
     const b={matieres:0,conso_var:0,comm_var:0,cb_var:0,pub:0,
       loyer:0,autres_loc:0,entretien:0,assurances:0,energie:0,divers_fixe:0,honoraires:0,
@@ -606,7 +610,7 @@ export default function App(){
         if(!key){ignored++;return;}
         const v=PRODUITS.has(key)?(r.credit-r.debit):(r.debit-r.credit);
         b[key]+=v;classified++;
-        if(key==="matieres"){const a=ventActivite(r.compte,mapAchats);if(a)vent[a]+=v;}
+        if(key==="matieres"){const a=ventActivite(r.libelle);if(a)vent[a]+=v;}
       });
     } else if(bal&&cCpt>-1){
       bal.rows.forEach(r=>{
@@ -616,13 +620,13 @@ export default function App(){
         const cred=cCred>-1?toNum(r[cCred]):0;
         const v=PRODUITS.has(key)?(cred-deb):(deb-cred);
         b[key]+=v;classified++;
-        if(key==="matieres"){const a=ventActivite(r[cCpt],mapAchats);if(a)vent[a]+=v;}
+        if(key==="matieres"){const a=ventActivite(cLib>-1?r[cLib]:"");if(a)vent[a]+=v;}
       });
     }
     Object.keys(b).forEach(k=>b[k]=Math.round(b[k]*100)/100);
     Object.keys(vent).forEach(k=>vent[k]=Math.round(vent[k]*100)/100);
     return {b,ignored,classified,vent};
-  },[bal,cCpt,cDeb,cCred,mapAchats]);
+  },[bal,cCpt,cDeb,cCred,cLib]);
 
   /* ---- Overrides manuels ---- */
   const [ov,setOv]=useState({});
@@ -842,7 +846,7 @@ export default function App(){
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
     a.download=`pilotage_sauvegarde.json`;a.click();
   };
-  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},budgets:d.budgets||{},mapAchats:d.mapAchats||{mat_resto:"",mat_bar:"",mat_pdej:""}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);const hys=Object.keys(d.hotel||{}).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
+  const loadStore=(file)=>{const r=new FileReader();r.onload=e=>{try{const d=JSON.parse(e.target.result);if(d&&d.exercices){setStore({exercices:d.exercices,hotel:d.hotel||{},budgets:d.budgets||{}});const ys=Object.keys(d.exercices).sort();if(ys.length)setExYear(ys[ys.length-1]);const hys=Object.keys(d.hotel||{}).sort();if(hys.length)setHExYear(hys[hys.length-1]);}}catch(err){window.alert("Fichier de sauvegarde illisible.");}};r.readAsText(file);};
   const exportAnnual=()=>{
     const cols=suivi.map(m=>m.label);
     const ncols=cols.length+2;
@@ -1575,7 +1579,7 @@ export default function App(){
             <div className="mini">Budget total des charges</div>
             <div className="num" style={{fontSize:20,fontWeight:700}}>{eur(budTotal)}</div>
           </div>
-          {!aucunBudget&&<button className="btn ghost" onClick={reporterBudget} title="Créer le budget de l'année suivante à partir de celui-ci"><RotateCcw size={14}/> Reporter</button>}
+          {!aucunBudget&&<button className="btn ghost" onClick={reporterBudget} title="Créer le budget d'une autre année en repartant de celui-ci (évite de tout ressaisir)"><RotateCcw size={14}/> Copier vers une autre année</button>}
           {budExArchive
             ? null
             : budLocked
@@ -1583,7 +1587,7 @@ export default function App(){
             : <button className="btn pri" disabled={aucunBudget} onClick={()=>{if(window.confirm(`Valider le budget ${budAnnee} ? Il sera verrouillé — vous pourrez toujours le débloquer ensuite.`))setBudLock(true);}}><CheckCircle2 size={14}/> Valider le budget</button>}
         </div>
         {budExArchive&&<div className="hint" style={{marginTop:12}}><Lock size={16}/>
-          <span><b>Exercice {budAnnee} clôturé.</b> Le budget et sa comparaison sont figés : ils constituent le bilan définitif de la saison, consultable à tout moment. Utilisez « Reporter » pour repartir de ce budget sur l'année suivante.</span></div>}
+          <span><b>Exercice {budAnnee} clôturé.</b> Le budget et sa comparaison sont figés : ils constituent le bilan définitif de la saison, consultable à tout moment. Utilisez « Copier vers une autre année » pour repartir de ce budget sur la saison suivante.</span></div>}
         {!budExArchive&&budLocked&&<div className="hint" style={{marginTop:12}}><Lock size={16}/>
           <span><b>Budget {budAnnee} validé{budLockedAt?` le ${budLockedAt}`:""}.</b> Les montants sont verrouillés : le suivi se fait sur cette base de référence. Cliquez « Débloquer » pour les modifier.</span></div>}
         <p className="mini" style={{marginTop:12}}>Fixez le budget <b>annuel</b> de chaque poste de charge pour la saison {exYear}, puis validez-le pour le figer. Le suivi compare ensuite le réel des mois enregistrés à ce budget. Laissez à 0 un poste que vous ne souhaitez pas budgéter.</p>
@@ -1622,22 +1626,11 @@ export default function App(){
           })}
           <div className="hint"><Info size={16}/>
             <span>Seules les charges que vous pouvez <b>piloter</b> ont un champ de saisie : matières, personnel, énergie, entretien, communication… Les charges <b>contractuelles ou mécaniques</b> (loyer, assurances, cotisations sociales, dotations, impôts) ne se budgètent pas — elles s'imposent à vous. Elles restent affichées dans le suivi, pour information, avec leur montant réel.</span></div>
-        </div>
-
-        <div className="card"><h3>Sous-comptes d'achats par activité</h3>
-          <p className="sub">Si votre comptabilité distingue les achats par activité (par exemple 601100 pour la restauration, 601200 pour le bar, 601300 pour les petits déjeuners), indiquez ici les numéros de comptes correspondants. La Vigie ventilera alors automatiquement le <b>réel</b> par activité à chaque import de balance, et le comparera au détail de votre budget.</p>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginTop:10}}>
-            {[["mat_resto","Restauration"],["mat_bar","Bar"],["mat_pdej","Petit déjeuner"]].map(([k,lab])=>(
-              <div key={k} className="ifield">
-                <label>{lab}</label>
-                <input type="text" placeholder="ex. 601100, 6021" value={mapAchats[k]||""} onChange={e=>setMapAchats(k,e.target.value)}/>
-              </div>))}
-          </div>
-          <div className="hint" style={{marginTop:12}}>
-            {ventActive
-              ? <><CheckCircle2 size={16}/><span><b>Ventilation active</b> sur la balance chargée : Restauration {eur(VENT.mat_resto)} · Bar {eur(VENT.mat_bar)} · Petit déjeuner {eur(VENT.mat_pdej)}. Ces montants sont enregistrés avec le mois et comparés à votre budget par activité.</span></>
-              : <><Info size={16}/><span>Aucun sous-compte reconnu pour l'instant : le réel des matières reste comparé au <b>total</b> du budget matières. Plusieurs numéros peuvent être saisis par activité, séparés par une virgule. Un numéro sert de préfixe : « 6011 » couvre 601100, 601110, etc.</span></>}
-          </div>
+          {ventActive
+            ? <div className="hint" style={{marginTop:10}}><CheckCircle2 size={16}/>
+                <span><b>Achats ventilés automatiquement</b> sur la balance chargée, d'après les libellés des comptes : Restauration {eur(VENT.mat_resto)} · Bar {eur(VENT.mat_bar)} · Petit déjeuner {eur(VENT.mat_pdej)}. Le détail est enregistré avec le mois et comparé à votre budget par activité.</span></div>
+            : <div className="hint" style={{marginTop:10}}><Info size={16}/>
+                <span>Le détail par activité du budget matières sert de repère. Si votre comptabilité distingue les achats par activité (libellés du type « achats alimentaires », « achats boissons », « achats petits déjeuners »), La Vigie les <b>reconnaît automatiquement</b> à l'import et compare alors le réel activité par activité. Les comptes au libellé générique restent comptés dans le total matières.</span></div>}
         </div>
 
         <div className="card"><h3>Budget vs réel — saison {exYear}</h3>
