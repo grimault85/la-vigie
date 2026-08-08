@@ -73,3 +73,45 @@ mises à jour de l'app. Rien à gérer côté client.
 
 Elles sont dans `build/` : `icon.png` (Mac/Linux, 1024×1024) et `icon.ico` (Windows).
 Pour changer le visuel, remplacer ces deux fichiers puis relancer la commande de build.
+
+---
+
+## Compilation automatique (GitHub Actions)
+
+Le dépôt contient un workflow `.github/workflows/build.yml` qui compile
+l'application **sur de vraies machines Windows et macOS**, dans le cloud GitHub.
+C'est le seul moyen d'obtenir un vrai `.dmg` macOS et des binaires Apple Silicon.
+
+### Lancer une compilation
+
+**Manuellement** — onglet *Actions* du dépôt → *Compiler La Vigie* → *Run workflow*.
+Les fichiers d'installation sont ensuite téléchargeables en bas de la page
+d'exécution, section *Artifacts* (conservés 30 jours).
+
+**Par version** — pousser une étiquette :
+
+```bash
+git tag v1.7.3
+git push origin v1.7.3
+```
+
+Une *Release* est alors créée automatiquement avec l'installateur Windows
+(`.exe`) et les fichiers macOS (`.dmg` Intel et Apple Silicon).
+
+### Ce qui est produit
+
+| Plateforme | Fichier | Remarque |
+|---|---|---|
+| Windows | `La Vigie Setup X.Y.Z.exe` | installateur classique |
+| macOS Intel | `La Vigie-X.Y.Z.dmg` | glisser-déposer vers Applications |
+| macOS Apple Silicon | `La Vigie-X.Y.Z-arm64.dmg` | natif M1/M2/M3/M4 |
+
+### Limite : la signature
+
+Sans certificat de développeur, les applications restent **non signées** :
+- Windows : avertissement SmartScreen au premier lancement
+  (*Informations complémentaires* → *Exécuter quand même*).
+- macOS : clic droit sur l'app → *Ouvrir* au premier lancement.
+
+Pour supprimer ces avertissements il faut un certificat de signature
+(Windows ~200-400 €/an, Apple Developer ~99 €/an), à ajouter en secrets du dépôt.

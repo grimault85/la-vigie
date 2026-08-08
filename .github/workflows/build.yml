@@ -1,0 +1,82 @@
+name: Compiler La Vigie
+
+# Deux façons de lancer une compilation :
+#  1. Manuellement : onglet « Actions » du dépôt → « Compiler La Vigie » → « Run workflow »
+#  2. Automatiquement : en poussant une étiquette de version, par ex.
+#       git tag v1.7.3 && git push origin v1.7.3
+#     Dans ce cas, une « Release » est créée avec les fichiers d'installation.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: ${{ matrix.nom }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            nom: Windows
+            cible: --win --x64
+          - os: macos-latest
+            nom: macOS (Intel + Apple Silicon)
+            cible: --mac --x64 --arm64
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Construire l'interface
+        run: npx vite build
+
+      - name: Construire l'application
+        env:
+          # Pas de certificat de signature : on évite que la compilation échoue
+          # en cherchant une identité inexistante.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder ${{ matrix.cible }} -c.asar=false --publish never
+
+      - name: Récupérer les fichiers d'installation
+        uses: actions/upload-artifact@v4
+        with:
+          name: La-Vigie-${{ matrix.nom }}
+          retention-days: 30
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+
+  publier:
+    name: Publier la version
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Rassembler les fichiers
+        uses: actions/download-artifact@v4
+        with:
+          path: fichiers
+
+      - name: Créer la Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: La Vigie ${{ github.ref_name }}
+          generate_release_notes: true
+          files: fichiers/**/*
