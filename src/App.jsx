@@ -128,7 +128,8 @@ const pct = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits
 const ACHATS=new Set(["matieres","conso_var"]);
 const ACHATS_GLOBAL={g:"Achats & matières",postes:[
   {k:"matieres",lab:"Achats de matières premières",cpt:"601·602·603·607",
-   detail:[{k:"mat_resto",lab:"Restauration"},{k:"mat_bar",lab:"Bar"},{k:"mat_pdej",lab:"Petit déjeuner"}]},
+   detail:[{k:"mat_resto",lab:"Restauration"},{k:"mat_bar",lab:"Bar"},
+           {k:"mat_pdej",lab:"Petit déjeuner"},{k:"mat_perso",lab:"Repas du personnel"}]},
   {k:"conso_var",lab:"Consommables & petit équipement",cpt:"606·624"},
 ]};
 const BUDGET_GROUPES=[
@@ -417,6 +418,7 @@ const PRODUITS = new Set(["ca","ca_hotel","ca_petitdej","ca_evt","autres_produit
 function ventActivite(libelleRaw){
   const t=String(libelleRaw||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase();
   if(!t)return null;
+  if(/REPAS ?(DU )?PERSONNEL|NOURRITURE ?PERSONNEL/.test(t))return "mat_perso";
   if(/PETIT[S]? ?DEJ|PDJ|VIENNOISERIE|BREAKFAST/.test(t))return "mat_pdej";
   if(/BOISSON|BIERE|VIN|ALCOOL|SPIRITUEU|CHAMPAGNE|SOFT|CAFE|BAR\b|LIQUIDE/.test(t))return "mat_bar";
   if(/ALIMENTAIRE|NOURRITURE|CUISINE|RESTAURATION|SOLIDE|DENREE|VIANDE|POISSON|LEGUME|EPICERIE|CREMERIE/.test(t))return "mat_resto";
@@ -604,7 +606,7 @@ export default function App(){
       telecom:0,bq_fixe:0,deplacements:0,impots_fixe:0,autres_gc:0,
       salaires:0,urssaf:0,mutuelle:0,retraite:0,autres_orgs:0,taxes_sal:0,
       dotations:0,autres_charges:0,charges_fin:0,charges_except:0,ca:0,ca_hotel:0,ca_petitdej:0,ca_evt:0,autres_produits:0,prod_fin:0,prod_except:0};
-    const vent={mat_resto:0,mat_bar:0,mat_pdej:0};
+    const vent={mat_resto:0,mat_bar:0,mat_pdej:0,mat_perso:0};
     const achats={}; // detail compte par compte des achats, pour un budget qui suit la balance
     let ignored=0,classified=0;
     if(bal&&bal.source==="pdf"){
@@ -641,9 +643,9 @@ export default function App(){
   const g=(k,a)=>(ov[k]!==undefined&&ov[k]!==""?toNum(ov[k]):a);
   const setV=(k,v)=>setOv(o=>({...o,[k]:v}));
   const B=auto.b;
-  const VENT=auto.vent||{mat_resto:0,mat_bar:0,mat_pdej:0};
+  const VENT=auto.vent||{mat_resto:0,mat_bar:0,mat_pdej:0,mat_perso:0};
   const ACH=auto.achats||{};
-  const ventActive=(VENT.mat_resto+VENT.mat_bar+VENT.mat_pdej)!==0;
+  const ventActive=(VENT.mat_resto+VENT.mat_bar+VENT.mat_pdej+VENT.mat_perso)!==0;
 
   // CA ventilé : bar/resto/événement depuis Jalia si dispo, sinon balance ; hôtel/petit déj depuis la balance
   const caissePeriode=jalia&&!jalia.error?jalia.periode:null;
@@ -745,20 +747,9 @@ export default function App(){
   };
   const budSuivi=(store.exercices?.[budAnnee]?.months)||[];
   // Le groupe « Achats & matières » suit la balance : une ligne par compte d'achat rencontré.
-  const comptesAchats=(()=>{
-    const m={};
-    budSuivi.forEach(mo=>Object.entries(mo.achats||{}).forEach(([c,d])=>{
-      if(!m[c])m[c]={cpt:c,lab:d.l||("Compte "+c),reel:0};
-      m[c].reel+=d.v||0; if(d.l)m[c].lab=d.l;
-    }));
-    Object.entries(ACH).forEach(([c,d])=>{if(!m[c])m[c]={cpt:c,lab:d.l||("Compte "+c),reel:0};});
-    Object.keys(budget).forEach(k=>{if(k.startsWith("ach_")){const c=k.slice(4);
-      if(!m[c])m[c]={cpt:c,lab:"Compte "+c+" (absent des balances)",reel:0};}});
-    return Object.values(m).sort((a,b)=>a.cpt<b.cpt?-1:1);
-  })();
-  const groupeAchats={g:"Achats & matières",postes:comptesAchats.map(a=>({k:"ach_"+a.cpt,lab:a.lab,cpt:a.cpt,reel:a.reel}))};
-  const GROUPES=[comptesAchats.length?groupeAchats:ACHATS_GLOBAL,...BUDGET_GROUPES];
-  const achatsDynamique=comptesAchats.length>0;
+  const GROUPES=[ACHATS_GLOBAL,...BUDGET_GROUPES];
+  const GROUPES_SAISIE=GROUPES;
+  const nouveauxComptes=[];
   const budReel=(k)=>{
     if(String(k).startsWith("ach_")){const c=String(k).slice(4);
       return budSuivi.reduce((a,m)=>a+((m.achats&&m.achats[c]&&m.achats[c].v)||0),0);}
@@ -844,7 +835,7 @@ export default function App(){
     }
     const key=`${annee}-${String(mois+1).padStart(2,"0")}`;
     const vals={}; LIGNES.forEach(([k,,v])=>vals[k]=Math.round(v*100)/100);
-    if(ventActive){vals.mat_resto_reel=VENT.mat_resto;vals.mat_bar_reel=VENT.mat_bar;vals.mat_pdej_reel=VENT.mat_pdej;}
+    if(ventActive){vals.mat_resto_reel=VENT.mat_resto;vals.mat_bar_reel=VENT.mat_bar;vals.mat_pdej_reel=VENT.mat_pdej;vals.mat_perso_reel=VENT.mat_perso;}
     const achats=Object.keys(ACH).length?JSON.parse(JSON.stringify(ACH)):undefined;
     const entry={key,mois,annee,label:`${MOISC[mois]} ${String(annee).slice(2)}`,vals,achats};
     setStore(s=>{
@@ -1632,7 +1623,7 @@ export default function App(){
         </div>
 
         <div className="card"><h3>Mon budget {exYear}</h3>
-          {GROUPES.map(g=>{
+          {GROUPES_SAISIE.map(g=>{
             const sousTotal=g.postes.reduce((a,p)=>a+budGet(p),0);
             return (<div key={g.g} style={{marginBottom:18}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",borderBottom:"1px solid #ECE6DC",paddingBottom:6,marginBottom:10}}>
@@ -1664,11 +1655,11 @@ export default function App(){
           })}
           <div className="hint"><Info size={16}/>
             <span>Seules les charges que vous pouvez <b>piloter</b> ont un champ de saisie : matières, personnel, énergie, entretien, communication… Les charges <b>contractuelles ou mécaniques</b> (loyer, assurances, cotisations sociales, dotations, impôts) ne se budgètent pas — elles s'imposent à vous. Elles restent affichées dans le suivi, pour information, avec leur montant réel.</span></div>
-          {achatsDynamique
+          {ventActive
             ? <div className="hint" style={{marginTop:10}}><CheckCircle2 size={16}/>
-                <span><b>Le budget des achats suit votre comptabilité.</b> Une ligne est créée pour chaque compte d'achat rencontré dans les balances de la saison, avec son libellé et son numéro. Si votre comptable ajoute un compte, il apparaît ici automatiquement au premier import ; s'il en supprime un, la ligne reste avec son historique. Aucune saisie de paramétrage n'est nécessaire.</span></div>
+                <span><b>Achats reconnus automatiquement</b> sur la balance chargée : Restauration {eur(VENT.mat_resto)} · Bar {eur(VENT.mat_bar)} · Petit déjeuner {eur(VENT.mat_pdej)} · Repas du personnel {eur(VENT.mat_perso)}. Vos lignes de budget ne changent jamais : quel que soit le nombre de comptes d'achats de votre comptabilité, chacun est rattaché à l'une de ces catégories à la lecture de la balance.</span></div>
             : <div className="hint" style={{marginTop:10}}><Info size={16}/>
-                <span>Importez et enregistrez au moins un mois pour que le budget des achats se construise automatiquement, une ligne par compte d'achat de votre balance. En attendant, le budget matières se saisit globalement.</span></div>}
+                <span>Le budget matières se répartit entre <b>Restauration</b>, <b>Bar</b>, <b>Petit déjeuner</b> et <b>Repas du personnel</b>. Ces lignes sont fixes : si votre comptable ajoute ou supprime des comptes d'achats, La Vigie les rattache automatiquement à la bonne catégorie sans jamais modifier votre budget.</span></div>}
         </div>
 
         <div className="card"><h3>Budget vs réel — saison {exYear}</h3>
