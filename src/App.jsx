@@ -125,12 +125,13 @@ const MOISC = ["Jan","Fév","Mar","Avr","Mai","Juin","Juil","Août","Sep","Oct",
 const eur = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:0})+" €";
 const eur2 = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{minimumFractionDigits:2,maximumFractionDigits:2})+" €";
 const pct = (n)=>(isFinite(n)?n:0).toLocaleString("fr-FR",{maximumFractionDigits:1})+" %";
+const ACHATS=new Set(["matieres","conso_var"]);
+const ACHATS_GLOBAL={g:"Achats & matières",postes:[
+  {k:"matieres",lab:"Achats de matières premières",cpt:"601·602·603·607",
+   detail:[{k:"mat_resto",lab:"Restauration"},{k:"mat_bar",lab:"Bar"},{k:"mat_pdej",lab:"Petit déjeuner"}]},
+  {k:"conso_var",lab:"Consommables & petit équipement",cpt:"606·624"},
+]};
 const BUDGET_GROUPES=[
-  {g:"Achats & matières",postes:[
-    {k:"matieres",lab:"Achats de matières premières",cpt:"601·602·603·607",
-     detail:[{k:"mat_resto",lab:"Restauration"},{k:"mat_bar",lab:"Bar"},{k:"mat_pdej",lab:"Petit déjeuner"}]},
-    {k:"conso_var",lab:"Consommables & petit équipement",cpt:"606·624"},
-  ]},
   {g:"Personnel",postes:[
     {k:"salaires",lab:"Salaires bruts",cpt:"641·644"},
   ]},
@@ -436,6 +437,7 @@ function classify(cptRaw){
   if(is("77"))return "prod_except";
   if(is("7"))return "autres_produits"; // filet : tout compte de classe 7 restant (71,72,73,79…) rejoint les autres produits — aucun produit n'est perdu
   // Charges (classe 6)
+  if(is("6022","6023"))return "conso_var"; // produits d'entretien / d'accueil : consommables, pas des denrées
   if(is("601","602","603","607"))return "matieres";
   if(is("6061"))return "energie";
   if(is("606"))return "conso_var";
@@ -603,6 +605,7 @@ export default function App(){
       salaires:0,urssaf:0,mutuelle:0,retraite:0,autres_orgs:0,taxes_sal:0,
       dotations:0,autres_charges:0,charges_fin:0,charges_except:0,ca:0,ca_hotel:0,ca_petitdej:0,ca_evt:0,autres_produits:0,prod_fin:0,prod_except:0};
     const vent={mat_resto:0,mat_bar:0,mat_pdej:0};
+    const achats={}; // detail compte par compte des achats, pour un budget qui suit la balance
     let ignored=0,classified=0;
     if(bal&&bal.source==="pdf"){
       (bal.parsed||[]).forEach(r=>{
@@ -611,6 +614,8 @@ export default function App(){
         const v=PRODUITS.has(key)?(r.credit-r.debit):(r.debit-r.credit);
         b[key]+=v;classified++;
         if(key==="matieres"){const a=ventActivite(r.libelle);if(a)vent[a]+=v;}
+        if(ACHATS.has(key)){const c=String(r.compte).replace(/\D/g,"");
+          if(!achats[c])achats[c]={l:(r.libelle||"Compte "+c).trim(),v:0,k:key};achats[c].v+=v;}
       });
     } else if(bal&&cCpt>-1){
       bal.rows.forEach(r=>{
@@ -621,11 +626,14 @@ export default function App(){
         const v=PRODUITS.has(key)?(cred-deb):(deb-cred);
         b[key]+=v;classified++;
         if(key==="matieres"){const a=ventActivite(cLib>-1?r[cLib]:"");if(a)vent[a]+=v;}
+        if(ACHATS.has(key)){const c=String(r[cCpt]).replace(/\D/g,"");
+          if(!achats[c])achats[c]={l:String(cLib>-1?r[cLib]:("Compte "+c)).trim(),v:0,k:key};achats[c].v+=v;}
       });
     }
     Object.keys(b).forEach(k=>b[k]=Math.round(b[k]*100)/100);
     Object.keys(vent).forEach(k=>vent[k]=Math.round(vent[k]*100)/100);
-    return {b,ignored,classified,vent};
+    Object.keys(achats).forEach(c=>achats[c].v=Math.round(achats[c].v*100)/100);
+    return {b,ignored,classified,vent,achats};
   },[bal,cCpt,cDeb,cCred,cLib]);
 
   /* ---- Overrides manuels ---- */
@@ -634,6 +642,7 @@ export default function App(){
   const setV=(k,v)=>setOv(o=>({...o,[k]:v}));
   const B=auto.b;
   const VENT=auto.vent||{mat_resto:0,mat_bar:0,mat_pdej:0};
+  const ACH=auto.achats||{};
   const ventActive=(VENT.mat_resto+VENT.mat_bar+VENT.mat_pdej)!==0;
 
   // CA ventilé : bar/resto/événement depuis Jalia si dispo, sinon balance ; hôtel/petit déj depuis la balance
@@ -735,14 +744,33 @@ export default function App(){
     return +budget[p.k]||0;
   };
   const budSuivi=(store.exercices?.[budAnnee]?.months)||[];
-  const budReel=(k)=>budSuivi.reduce((a,m)=>a+(m.vals?.[k]||0),0);
-  const budTotal=BUDGET_GROUPES.reduce((a,g)=>a+g.postes.reduce((x,p)=>x+budGet(p),0),0);
-  const budReelTotal=BUDGET_GROUPES.reduce((a,g)=>a+g.postes.reduce((x,p)=>x+budReel(p.k),0),0);
+  // Le groupe « Achats & matières » suit la balance : une ligne par compte d'achat rencontré.
+  const comptesAchats=(()=>{
+    const m={};
+    budSuivi.forEach(mo=>Object.entries(mo.achats||{}).forEach(([c,d])=>{
+      if(!m[c])m[c]={cpt:c,lab:d.l||("Compte "+c),reel:0};
+      m[c].reel+=d.v||0; if(d.l)m[c].lab=d.l;
+    }));
+    Object.entries(ACH).forEach(([c,d])=>{if(!m[c])m[c]={cpt:c,lab:d.l||("Compte "+c),reel:0};});
+    Object.keys(budget).forEach(k=>{if(k.startsWith("ach_")){const c=k.slice(4);
+      if(!m[c])m[c]={cpt:c,lab:"Compte "+c+" (absent des balances)",reel:0};}});
+    return Object.values(m).sort((a,b)=>a.cpt<b.cpt?-1:1);
+  })();
+  const groupeAchats={g:"Achats & matières",postes:comptesAchats.map(a=>({k:"ach_"+a.cpt,lab:a.lab,cpt:a.cpt,reel:a.reel}))};
+  const GROUPES=[comptesAchats.length?groupeAchats:ACHATS_GLOBAL,...BUDGET_GROUPES];
+  const achatsDynamique=comptesAchats.length>0;
+  const budReel=(k)=>{
+    if(String(k).startsWith("ach_")){const c=String(k).slice(4);
+      return budSuivi.reduce((a,m)=>a+((m.achats&&m.achats[c]&&m.achats[c].v)||0),0);}
+    return budSuivi.reduce((a,m)=>a+(m.vals?.[k]||0),0);
+  };
+  const budTotal=GROUPES.reduce((a,g)=>a+g.postes.reduce((x,p)=>x+budGet(p),0),0);
+  const budReelTotal=GROUPES.reduce((a,g)=>a+g.postes.reduce((x,p)=>x+budReel(p.k),0),0);
   const budEtat=(bud,reel)=>{ if(!bud)return "none"; const t=reel/bud*100;
     return t>100?"bad":t>=90?"warn":"good"; };
   const budCol=(s)=>s==="bad"?"#C77B6B":s==="warn"?"#C9A227":s==="good"?"var(--sage)":"#9a9a9a";
   const budPart=(bud,reel)=>bud>0?reel/bud*100:0;
-  const budDepassements=BUDGET_GROUPES.flatMap(g=>g.postes).map(p=>{
+  const budDepassements=GROUPES.flatMap(g=>g.postes).map(p=>{
     const b=budGet(p); if(!b)return null; const r=budReel(p.k);
     return r>b?{lab:p.lab,bud:b,reel:r,ecart:r-b}:null;
   }).filter(Boolean).sort((a,b)=>b.ecart-a.ecart);
@@ -817,7 +845,8 @@ export default function App(){
     const key=`${annee}-${String(mois+1).padStart(2,"0")}`;
     const vals={}; LIGNES.forEach(([k,,v])=>vals[k]=Math.round(v*100)/100);
     if(ventActive){vals.mat_resto_reel=VENT.mat_resto;vals.mat_bar_reel=VENT.mat_bar;vals.mat_pdej_reel=VENT.mat_pdej;}
-    const entry={key,mois,annee,label:`${MOISC[mois]} ${String(annee).slice(2)}`,vals};
+    const achats=Object.keys(ACH).length?JSON.parse(JSON.stringify(ACH)):undefined;
+    const entry={key,mois,annee,label:`${MOISC[mois]} ${String(annee).slice(2)}`,vals,achats};
     setStore(s=>{
       const ex={...s.exercices};
       const prev=ex[y]&&ex[y].months?ex[y].months.filter(x=>x.key!==key):[];
@@ -1603,7 +1632,7 @@ export default function App(){
         </div>
 
         <div className="card"><h3>Mon budget {exYear}</h3>
-          {BUDGET_GROUPES.map(g=>{
+          {GROUPES.map(g=>{
             const sousTotal=g.postes.reduce((a,p)=>a+budGet(p),0);
             return (<div key={g.g} style={{marginBottom:18}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",borderBottom:"1px solid #ECE6DC",paddingBottom:6,marginBottom:10}}>
@@ -1635,11 +1664,11 @@ export default function App(){
           })}
           <div className="hint"><Info size={16}/>
             <span>Seules les charges que vous pouvez <b>piloter</b> ont un champ de saisie : matières, personnel, énergie, entretien, communication… Les charges <b>contractuelles ou mécaniques</b> (loyer, assurances, cotisations sociales, dotations, impôts) ne se budgètent pas — elles s'imposent à vous. Elles restent affichées dans le suivi, pour information, avec leur montant réel.</span></div>
-          {ventActive
+          {achatsDynamique
             ? <div className="hint" style={{marginTop:10}}><CheckCircle2 size={16}/>
-                <span><b>Achats ventilés automatiquement</b> sur la balance chargée, d'après les libellés des comptes : Restauration {eur(VENT.mat_resto)} · Bar {eur(VENT.mat_bar)} · Petit déjeuner {eur(VENT.mat_pdej)}. Le détail est enregistré avec le mois et comparé à votre budget par activité.</span></div>
+                <span><b>Le budget des achats suit votre comptabilité.</b> Une ligne est créée pour chaque compte d'achat rencontré dans les balances de la saison, avec son libellé et son numéro. Si votre comptable ajoute un compte, il apparaît ici automatiquement au premier import ; s'il en supprime un, la ligne reste avec son historique. Aucune saisie de paramétrage n'est nécessaire.</span></div>
             : <div className="hint" style={{marginTop:10}}><Info size={16}/>
-                <span>Le détail par activité du budget matières sert de repère. Si votre comptabilité distingue les achats par activité (libellés du type « achats alimentaires », « achats boissons », « achats petits déjeuners »), La Vigie les <b>reconnaît automatiquement</b> à l'import et compare alors le réel activité par activité. Les comptes au libellé générique restent comptés dans le total matières.</span></div>}
+                <span>Importez et enregistrez au moins un mois pour que le budget des achats se construise automatiquement, une ligne par compte d'achat de votre balance. En attendant, le budget matières se saisit globalement.</span></div>}
         </div>
 
         <div className="card"><h3>Budget vs réel — saison {exYear}</h3>
@@ -1652,7 +1681,7 @@ export default function App(){
               <div className="hscroll"><table className="tbl">
                 <thead><tr><th style={{width:22}}></th><th>Poste</th><th style={{textAlign:"right"}}>Budget annuel</th><th style={{textAlign:"right"}}>Réel cumulé</th><th style={{textAlign:"right"}}>Reste</th><th style={{textAlign:"right"}}>Consommé</th></tr></thead>
                 <tbody>
-                {BUDGET_GROUPES.map(g=>{
+                {GROUPES.map(g=>{
                   const lignes=g.postes.filter(p=>budGet(p)>0||budReel(p.k)!==0);
                   if(!lignes.length)return null;
                   const bT=g.postes.reduce((a,p)=>a+budGet(p),0);
