@@ -57,10 +57,11 @@ const css = `
 .pnl td.lbl{color:var(--ink)}
 .pnl td.cpt{font-size:11px;color:var(--taupe);white-space:nowrap;font-weight:700}
 .pnl td.amt{text-align:right;width:150px;white-space:nowrap}
-.pnl.compact{table-layout:fixed;width:100%}
-.pnl.compact td{padding:4px 5px;font-size:12px;overflow:hidden;text-overflow:ellipsis}
-.pnl.compact td:first-child{width:132px}
-.pnl.compact td:last-child{width:64px}
+.pnl.compact td{padding:4px 5px;font-size:12px}
+.pnl.annuel{table-layout:fixed;width:100%}
+.pnl.annuel td{overflow:hidden;text-overflow:ellipsis}
+.pnl.annuel td:first-child{width:132px}
+.pnl.annuel td:last-child{width:64px}
 .pnl.compact td.lbl{font-size:12.5px;max-width:150px;white-space:normal;line-height:1.2}
 .nospin::-webkit-outer-spin-button,.nospin::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .nospin{-moz-appearance:textfield;appearance:textfield}
@@ -1486,7 +1487,7 @@ export default function App(){
           ? <div className="card"><div className="hint"><CalendarDays size={16}/>
               <span>Exercice {exYear} vide. Importez une balance, vérifiez le compte de résultat, puis cliquez « Ajouter au tableau » — chaque mois viendra remplir une colonne ici.</span></div></div>
           : <div className="card hscroll">
-              <table className="pnl compact" style={{width:"100%"}}><tbody>
+              <table className="pnl compact annuel" style={{width:"100%"}}><tbody>
                 <tr className="sec">
                   <td style={{position:"sticky",left:0}}>Poste</td>
                   {suivi.map(m=>(<td key={m.key} style={{textAlign:"right",textTransform:"none",letterSpacing:0,whiteSpace:"nowrap"}}>
@@ -1531,7 +1532,7 @@ export default function App(){
 
         {cmpEntries.length>=1&&
           <div className="card hscroll">
-            <table className="pnl compact" style={{width:"100%"}}><tbody>
+            <table className="pnl compact" style={{width:"100%",minWidth:560}}><tbody>
               <tr className="sec">
                 <td style={{position:"sticky",left:0}}>Poste</td>
                 {cmpEntries.map(e=>(<td key={e.annee} style={{textAlign:"right",textTransform:"none",letterSpacing:0}}>{MOIS[cmpMonth].slice(0,3)} {e.annee}</td>))}
@@ -1947,7 +1948,7 @@ export default function App(){
                 <select value={hTo||hAvail[hAvail.length-1]} onChange={e=>setHTo(+e.target.value)}>
                   {hAvail.map(m=><option key={m} value={m}>{MOIS[m-1]}</option>)}
                 </select></div>
-              {(hFrom||hTo)&&<button className="btn ghost" onClick={()=>{setHFrom(0);setHTo(0);}} title="Toute la saison">Tout</button>}
+              {(hFrom>0||hTo>0)&&<button className="btn ghost" onClick={()=>{setHFrom(0);setHTo(0);}} title="Toute la saison">Tout</button>}
             </>}
             <div style={{flex:1}}/>
             {hSuivi.length>0&&<button className="btn ghost" onClick={deleteHotelYear} title="Supprimer cette saison" style={{color:"var(--red)"}}><Trash2 size={14}/></button>}
