@@ -2,9 +2,11 @@ name: Compiler La Vigie
 
 # Deux façons de lancer une compilation :
 #  1. Manuellement : onglet « Actions » du dépôt → « Compiler La Vigie » → « Run workflow »
-#  2. Automatiquement : en poussant une étiquette de version, par ex.
-#       git tag v1.7.3 && git push origin v1.7.3
-#     Dans ce cas, une « Release » est créée avec les fichiers d'installation.
+#  2. Par version : en poussant une étiquette, par ex.
+#       git tag v1.9.5
+#       git push origin v1.9.5
+#     Une « Release » est alors créée avec les fichiers d'installation ET les
+#     fichiers latest.yml / .blockmap necessaires à la mise à jour automatique.
 on:
   workflow_dispatch:
   push:
@@ -48,6 +50,8 @@ jobs:
           # en cherchant une identité inexistante.
           CSC_IDENTITY_AUTO_DISCOVERY: false
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # --publish never : c'est le job « publier » qui attache les fichiers,
+        # afin de garder la main sur le contenu exact de la Release.
         run: npx electron-builder ${{ matrix.cible }} -c.asar=false --publish never
 
       - name: Récupérer les fichiers d'installation
@@ -56,10 +60,14 @@ jobs:
           name: La-Vigie-${{ matrix.nom }}
           retention-days: 30
           if-no-files-found: error
+          # latest.yml, latest-mac.yml et .blockmap sont INDISPENSABLES :
+          # sans eux, les postes déjà installés ne détectent aucune version.
           path: |
             release/*.exe
             release/*.dmg
             release/*.zip
+            release/*.yml
+            release/*.blockmap
 
   publier:
     name: Publier la version
@@ -73,6 +81,15 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: fichiers
+
+      - name: Vérifier la présence des fichiers de mise à jour
+        run: |
+          echo "Fichiers récupérés :"
+          find fichiers -type f | sort
+          if ! find fichiers -name "latest.yml" | grep -q .; then
+            echo "::error::latest.yml absent - la mise à jour automatique Windows ne fonctionnerait pas."
+            exit 1
+          fi
 
       - name: Créer la Release
         uses: softprops/action-gh-release@v2
