@@ -31,7 +31,7 @@ npm run dist:win
 ```
 
 Le fichier est généré dans `release/` :
-`La Vigie Setup 1.9.4.exe`
+`La Vigie Setup 1.9.5.exe`
 
 C'est l'installateur à distribuer. À l'installation, l'utilisateur peut choisir le dossier,
 et un raccourci « La Vigie » est créé.
@@ -49,7 +49,7 @@ npm run dist:mac
 ```
 
 Le fichier est généré dans `release/` :
-`La Vigie-1.9.4.dmg` (ou `.dmg` pour Intel/Apple Silicon selon la machine).
+`La Vigie-1.9.5.dmg` (ou `.dmg` pour Intel/Apple Silicon selon la machine).
 
 L'utilisateur ouvre le .dmg et glisse **La Vigie** dans Applications.
 
@@ -91,8 +91,8 @@ d'exécution, section *Artifacts* (conservés 30 jours).
 **Par version** — pousser une étiquette :
 
 ```bash
-git tag v1.9.4
-git push origin v1.9.4
+git tag v1.9.5
+git push origin v1.9.5
 ```
 
 Une *Release* est alors créée automatiquement avec l'installateur Windows
@@ -115,3 +115,61 @@ Sans certificat de développeur, les applications restent **non signées** :
 
 Pour supprimer ces avertissements il faut un certificat de signature
 (Windows ~200-400 €/an, Apple Developer ~99 €/an), à ajouter en secrets du dépôt.
+
+---
+
+## Mise à jour automatique
+
+À partir de la version 1.9.5, La Vigie vérifie s'il existe une version plus
+récente publiée sur GitHub et propose de l'installer. **Rien ne s'installe sans
+accord** : une application qui redémarrerait d'elle-même ferait perdre une
+saisie comptable en cours.
+
+### Ce que voit la cliente
+
+1. Au démarrage (vérification discrète, différée de 4 secondes), ou via le menu
+   *Aide → Rechercher les mises à jour…*
+2. Si une version existe : « La version X est disponible » → *Télécharger* ou
+   *Plus tard*
+3. Une fois téléchargée : *Installer et redémarrer* ou *À la prochaine fermeture*
+
+Si le poste est hors ligne ou déjà à jour, la vérification automatique reste
+silencieuse. Une vérification lancée depuis le menu affiche toujours un résultat.
+
+### Publier une nouvelle version
+
+```bash
+# 1. mettre à jour le numéro dans package.json (ex. 1.9.6)
+# 2. commit
+git add -A
+git commit -m "1.9.6 — ..."
+# 3. étiqueter et pousser
+git tag v1.9.6
+git push origin main
+git push origin v1.9.6
+```
+
+Le workflow compile Windows et macOS, puis crée une Release avec les
+installateurs **et** les fichiers `latest.yml` / `.blockmap`.
+
+### Conditions à respecter
+
+- Le tag doit être au format `vX.Y.Z` et **correspondre** à la version de
+  `package.json`. Une version installée supérieure ou égale à celle publiée ne
+  déclenche aucune mise à jour.
+- `latest.yml` et les `.blockmap` doivent rester attachés à la Release : ce sont
+  eux qui permettent la détection. Le workflow les joint automatiquement et
+  échoue si `latest.yml` est absent.
+- Les noms de fichiers ne doivent pas contenir d'espaces (`artifactName` est
+  configuré en conséquence) : electron-updater échoue sur les URL avec espaces.
+
+### Limites
+
+- **Le dépôt doit être public**, ou au minimum ses Releases. Sur un dépôt privé,
+  electron-updater exige un jeton d'accès embarqué dans l'application, ce qui
+  reviendrait à le distribuer au client — à éviter.
+- **macOS** : la mise à jour automatique exige une application signée par un
+  certificat Apple (99 €/an). Sans cela, les postes Mac téléchargent le `.dmg`
+  manuellement. Les postes Windows ne sont pas concernés.
+- L'application n'étant pas signée, l'installation d'une mise à jour peut
+  déclencher un avertissement SmartScreen sur certains postes.
