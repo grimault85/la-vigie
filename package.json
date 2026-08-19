@@ -62,7 +62,8 @@
         "owner": "grimault85",
         "repo": "la-vigie"
       }
-    ]
+    ],
+    "asar": false
   },
   "devDependencies": {
     "@vitejs/plugin-react": "4.7.0",
