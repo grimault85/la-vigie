@@ -55,7 +55,7 @@
       "category": "Office",
       "icon": "build/icon.png"
     },
-    "artifactName": "${productName}-${version}-${os}.${ext}",
+    "artifactName": "La-Vigie-${version}-${os}.${ext}",
     "publish": [
       {
         "provider": "github",
