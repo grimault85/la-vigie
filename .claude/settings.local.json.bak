@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh repo *)",
+      "Bash(git fetch *)",
+      "Bash(git checkout *)",
+      "Bash(git show *)",
+      "Read(//tmp/**)",
+      "Bash(MSYS_NO_PATHCONV=1 git show origin/master:.claude/settings.json)",
+      "Bash(git check-ignore *)"
+    ]
+  }
+}
