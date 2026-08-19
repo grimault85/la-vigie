@@ -553,6 +553,11 @@ export default function App(){
   const [moisDetecte,setMoisDetecte]=useState(false);
   const [tauxIS,setTauxIS]=useState(25);
   // Magasin d'exercices : { exercices:{ "2025":{archived:false,months:[...]}, ... } }
+  const [appVersion,setAppVersion]=useState("");
+  useEffect(()=>{
+    try{ if(window.laVigie&&window.laVigie.getVersion)
+      window.laVigie.getVersion().then(v=>setAppVersion(v)).catch(()=>{}); }catch(e){}
+  },[]);
   const [store,setStore]=useState({exercices:{},hotel:{},budgets:{}});
   const [exYear,setExYear]=useState(String(now.getFullYear()));
   const [memOK,setMemOK]=useState(true);
@@ -1240,7 +1245,7 @@ export default function App(){
         <img className="logo" src={LOGO_DARK} alt="Logo"/>
         <div className="mtitle">
           <h1 className="display">La Vigie</h1>
-          <p>Pilotage financier — compte de résultat, santé &amp; taux de remplissage.</p>
+          <p>Pilotage financier — compte de résultat, santé &amp; taux de remplissage.{appVersion&&<span style={{marginLeft:8,color:"var(--taupe)",fontSize:12}}>version {appVersion}</span>}</p>
         </div>
       </div>
 

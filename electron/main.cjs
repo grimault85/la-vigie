@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, dialog } = require("electron");
+const { app, BrowserWindow, Menu, shell, dialog, ipcMain } = require("electron");
 const path = require("path");
 const { autoUpdater } = require("electron-updater");
 
@@ -172,6 +172,8 @@ const menuTemplate = [
     ],
   },
 ];
+
+ipcMain.handle("app-version", () => app.getVersion());
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
